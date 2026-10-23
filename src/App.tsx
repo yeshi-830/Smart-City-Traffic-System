@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  Activity, AlertTriangle, ArrowRight, ArrowUpRight, Bell,
+  Activity, AlertTriangle, ArrowDownRight, ArrowRight, ArrowUpRight, Bell,
   CarFront, Check, ChevronDown, CircleHelp, Clock3, CloudSun, Construction,
   Crosshair, Gauge, MapPin, Menu, Plus, RefreshCw, Search, ShieldCheck,
   Signal, Siren, SlidersHorizontal, Sparkles, TrendingUp, X, Zap,
@@ -42,6 +42,8 @@ export default function App() {
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
   const [showIncidentForm, setShowIncidentForm] = useState(false);
+  const [formIntersectionId, setFormIntersectionId] = useState("");
+  const [formLocation, setFormLocation] = useState("");
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState("");
   const [noticeError, setNoticeError] = useState(false);
@@ -77,6 +79,12 @@ export default function App() {
   function announce(message: string, isError = false) {
     setNoticeError(isError);
     setNotice(message);
+  }
+
+  function openIncidentForm() {
+    setFormIntersectionId(selectedId ?? "");
+    setFormLocation("");
+    setShowIncidentForm(true);
   }
 
   const selected = dashboard?.intersections.find((item) => item.id === selectedId) ?? null;
@@ -203,7 +211,7 @@ export default function App() {
               <button className={`button button-secondary${refreshing ? " is-loading" : ""}`} onClick={() => void refresh(true)} disabled={refreshing}>
                 <RefreshCw size={15} className={refreshing ? "spin" : ""} />Refresh
               </button>
-              <button className="button button-primary" onClick={() => setShowIncidentForm(true)}><Plus size={16} />Report incident</button>
+              <button className="button button-primary" onClick={openIncidentForm}><Plus size={16} />Report incident</button>
             </div>
           </div>
 
@@ -269,7 +277,7 @@ export default function App() {
                   ))}
                   {!loading && (dashboard?.incidents.filter((item) => item.status !== "resolved").length ?? 0) === 0 && <div className="empty-incidents"><ShieldCheck size={24} /><strong>All clear</strong><span>No active incidents in the response queue.</span></div>}
                 </div>
-                <button className="incident-add" onClick={() => setShowIncidentForm(true)}><Plus size={15} /> Report a new incident</button>
+                <button className="incident-add" onClick={openIncidentForm}><Plus size={15} /> Report a new incident</button>
               </section>
 
               <section className="intersection-card" id="intersections">
@@ -295,10 +303,10 @@ export default function App() {
                 </div>
                 {selected && (
                   <div className="intersection-detail">
-                    <div className="detail-header"><div><span className="eyebrow">SIGNAL CONTROL · {selected.id.toUpperCase()}</span><strong>{selected.name}</strong></div><span className={`mode-badge ${selected.mode}`}>{selected.mode === "adaptive" ? <Sparkles size={12} /> : <Signal size={12} />}{selected.mode}</span></div>
+                    <div className="detail-header"><div><span className="eyebrow">DEMO SIGNAL CONTROL · {selected.id.toUpperCase()}</span><strong>{selected.name}</strong></div><span className={`mode-badge ${selected.mode}`}>{selected.mode === "adaptive" ? <Sparkles size={12} /> : <Signal size={12} />}{selected.mode}</span></div>
                     <div className="detail-stats"><span><strong>{selected.vehiclesPerHour.toLocaleString()}</strong><small>vehicles / hr</small></span><span><strong>{selected.waitSeconds}s</strong><small>avg. wait</small></span><span><strong>{selected.dailyVehicles.toLocaleString()}</strong><small>vehicles / day</small></span></div>
-                    <button className="optimize-button" onClick={() => void changeSignalMode(selected)}><Zap size={14} />{selected.mode === "adaptive" ? "Switch to fixed timing" : "Enable adaptive timing"}<ArrowRight size={14} /></button>
-                    <span className="operator-note"><ShieldCheck size={12} />Signal plan changes apply immediately</span>
+                    <button className="optimize-button" onClick={() => void changeSignalMode(selected)}><Zap size={14} />{selected.mode === "adaptive" ? "Simulate fixed timing" : "Simulate adaptive timing"}<ArrowRight size={14} /></button>
+                    <span className="operator-note"><ShieldCheck size={12} />Demo only — no physical signal is controlled</span>
                   </div>
                 )}
                 <div className="intersection-footer"><span>{filtered.length} monitored intersections</span><span className="sim-note"><Activity size={12} /> Simulation</span></div>
@@ -316,7 +324,7 @@ export default function App() {
             <div className="modal-heading"><div><span className="eyebrow">INCIDENT RESPONSE</span><h2 id="incident-form-title">Report an incident</h2><p>Log an issue for the traffic operations team.</p></div><button className="icon-button" aria-label="Close dialog" onClick={() => setShowIncidentForm(false)}><X size={18} /></button></div>
             <form onSubmit={(event) => void submitIncident(event)}>
               <label>Incident type<select name="type" required defaultValue="Vehicle collision"><option>Vehicle collision</option><option>Signal malfunction</option><option>Roadwork</option><option>Pedestrian hazard</option><option>Road obstruction</option><option>Other</option></select></label>
-              <label>Location<select name="intersectionId" defaultValue=""><option value="">Enter unmonitored location</option>{(dashboard?.intersections ?? []).map((item) => <option key={item.id} value={item.id}>{item.name} · {item.district}</option>)}</select><input name="location" placeholder="Street or intersection location" maxLength={120} required /></label>
+              <label>Location<select name="intersectionId" value={formIntersectionId} onChange={(event) => { setFormIntersectionId(event.target.value); setFormLocation(""); }}><option value="">Unmonitored location</option>{(dashboard?.intersections ?? []).map((item) => <option key={item.id} value={item.id}>{item.name} · {item.district}</option>)}</select><input name="location" value={formLocation || dashboard?.intersections.find((item) => item.id === formIntersectionId)?.name || ""} onChange={(event) => setFormLocation(event.target.value)} placeholder="Street or intersection location" maxLength={120} required /></label>
               <label>Severity<select name="severity" defaultValue="medium">{severityOptions.map((level) => <option key={level} value={level}>{level[0].toUpperCase() + level.slice(1)}</option>)}</select></label>
               <label>Description <span className="optional-label">Optional</span><textarea name="description" rows={3} maxLength={500} placeholder="Share any details that could help responders..." /></label>
               <div className="form-footer"><span><ShieldCheck size={14} />Visible to city operators</span><button className="button button-primary" type="submit" disabled={saving}>{saving ? <RefreshCw size={15} className="spin" /> : <Plus size={15} />}{saving ? "Submitting..." : "Submit report"}</button></div>

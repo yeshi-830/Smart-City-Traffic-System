@@ -137,6 +137,10 @@ app.patch("/api/incidents/:id/status", (request, response) => {
   response.json(getIncident(id));
 });
 
+app.use("/api", (_request, response) => {
+  response.status(404).json({ error: "API endpoint not found." });
+});
+
 const builtFrontend = resolve("dist/client");
 if (existsSync(join(builtFrontend, "index.html"))) {
   app.use(express.static(builtFrontend));

@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # FlowCity Traffic Operations
 
 FlowCity is a responsive, full-stack traffic operations MVP for prioritizing intersection bottlenecks, recording incidents, and coordinating operator-controlled signal plans. It ships with clearly labelled **simulated** traffic readings and sample city locations; it does not connect to real sensors, emergency services, a city map provider, or live weather services.
@@ -52,3 +53,7 @@ The Express server serves the compiled client and API on port `4000`. Set `PORT`
 ## Bringing the system online with real data
 
 Replace `server/traffic.ts`'s simulation with normalized observations from an authorized traffic-sensor feed, validate freshness and units at the ingestion boundary, and expose sensor connectivity/quality alongside each reading. Production signal control also needs authenticated, role-based operator access, an auditable approval/safety policy, vendor-specific controller integration, and fail-safe behavior when connectivity or sensor quality is lost. The included signal-mode action is a persisted demo control, not a command to physical signals.
+=======
+# Smart-City-Traffic-System
+A Smart City Traffic Management System built with React, TypeScript, and Node.js to visualize traffic conditions, monitor congestion, and support more efficient urban traffic management.
+>>>>>>> 08af671518494922303c3c0216201a063dfec396

@@ -58,6 +58,90 @@ app.get("/api/intersections", (_request, response) => {
   })));
 });
 
+function summarizeIntersection(intersection: ReturnType<typeof getIntersection>) {
+  if (!intersection) {
+    return null;
+  }
+
+  const reading = getTrafficReading(intersection);
+  let priority: "critical" | "high" | "medium" | "low";
+  let recommendation: string;
+
+  if (reading.congestion === "Severe") {
+    priority = "critical";
+    recommendation = "Urgent review required: severe congestion detected.";
+  } else if (reading.congestion === "Heavy") {
+    priority = "high";
+    recommendation = "Monitor closely and review adaptive signal settings.";
+  } else if (reading.congestion === "Moderate") {
+    priority = "medium";
+    recommendation = "Monitor traffic flow for increasing congestion.";
+  } else {
+    priority = "low";
+    recommendation = "Traffic flow is clear. Continue routine monitoring.";
+  }
+
+  return {
+    ...intersection,
+    ...reading,
+    signalMode: intersection.mode,
+    priority,
+    recommendation,
+  };
+}
+
+app.get("/api/intersections/:id", (request, response) => {
+  const intersection = getIntersection(request.params.id);
+  if (!intersection) {
+    response.status(404).json({ error: "Intersection not found." });
+    return;
+  }
+
+  const summary = summarizeIntersection(intersection);
+  if (!summary) {
+    response.status(404).json({ error: "Intersection not found." });
+    return;
+  }
+
+  response.json({
+    dataMode: "simulated",
+    updatedAt: new Date().toISOString(),
+    intersection: summary,
+  });
+});
+
+app.get("/api/monitoring/:id", (request, response) => {
+  const intersection = getIntersection(request.params.id);
+  if (!intersection) {
+    response.status(404).json({ error: "Intersection not found." });
+    return;
+  }
+
+  const summary = summarizeIntersection(intersection);
+  if (!summary) {
+    response.status(404).json({ error: "Intersection not found." });
+    return;
+  }
+
+  response.json({
+    dataMode: "simulated",
+    updatedAt: new Date().toISOString(),
+    intersection: {
+      intersectionId: summary.id,
+      name: summary.name,
+      district: summary.district,
+      congestion: summary.congestion,
+      vehiclesPerHour: summary.vehiclesPerHour,
+      speed: summary.speed,
+      waitSeconds: summary.waitSeconds,
+      signalPhase: summary.signalPhase,
+      signalMode: summary.signalMode,
+      priority: summary.priority,
+      recommendation: summary.recommendation,
+    },
+  });
+});
+
 app.get("/api/monitoring", (_request, response) => {
   const intersections = listIntersections();
 
@@ -135,6 +219,22 @@ app.post("/api/intersections/:id/optimize", (request, response) => {
 
 app.get("/api/incidents", (_request, response) => {
   response.json(listIncidents());
+});
+
+app.get("/api/incidents/:id", (request, response) => {
+  const id = Number(request.params.id);
+  if (!Number.isSafeInteger(id) || id < 1) {
+    response.status(400).json({ error: "A valid incident ID is required." });
+    return;
+  }
+
+  const incident = getIncident(id);
+  if (!incident) {
+    response.status(404).json({ error: "Incident not found." });
+    return;
+  }
+
+  response.json(incident);
 });
 
 app.post("/api/incidents", (request, response) => {

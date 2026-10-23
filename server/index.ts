@@ -58,6 +58,71 @@ app.get("/api/intersections", (_request, response) => {
   })));
 });
 
+app.get("/api/monitoring", (_request, response) => {
+  const intersections = listIntersections();
+
+  const monitoring = intersections.map((intersection) => {
+    const reading = getTrafficReading(intersection);
+
+    let priority: "critical" | "high" | "medium" | "low";
+    let recommendation: string;
+
+    if (reading.congestion === "Severe") {
+      priority = "critical";
+      recommendation =
+        "Urgent review required: severe congestion detected.";
+    } else if (reading.congestion === "Heavy") {
+      priority = "high";
+      recommendation =
+        "Monitor closely and review adaptive signal settings.";
+    } else if (reading.congestion === "Moderate") {
+      priority = "medium";
+      recommendation =
+        "Monitor traffic flow for increasing congestion.";
+    } else {
+      priority = "low";
+      recommendation =
+        "Traffic flow is clear. Continue routine monitoring.";
+    }
+
+    return {
+      intersectionId: intersection.id,
+      name: intersection.name,
+      district: intersection.district,
+      congestion: reading.congestion,
+      vehiclesPerHour: reading.vehiclesPerHour,
+      speed: reading.speed,
+      waitSeconds: reading.waitSeconds,
+      signalPhase: reading.signalPhase,
+      signalMode: intersection.mode,
+      priority,
+      recommendation,
+    };
+  });
+
+  const priorityOrder = {
+    critical: 0,
+    high: 1,
+    medium: 2,
+    low: 3,
+  };
+
+  monitoring.sort(
+    (a, b) => priorityOrder[a.priority] - priorityOrder[b.priority],
+  );
+
+  response.json({
+    dataMode: "simulated",
+    updatedAt: new Date().toISOString(),
+    totalIntersections: monitoring.length,
+    alerts: monitoring.filter(
+      (item) => item.priority === "critical" || item.priority === "high",
+    ).length,
+    intersections: monitoring,
+  });
+});
+
+
 app.post("/api/intersections/:id/optimize", (request, response) => {
   const intersection = getIntersection(request.params.id);
   if (!intersection) {

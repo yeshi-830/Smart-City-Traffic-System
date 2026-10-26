@@ -1,0 +1,405 @@
+```jsx
+import { useMemo, useState } from 'react'
+import './App.css'
+
+const initialRoads = [
+  { id: 1, name: 'Bole Road', area: 'Bole', vehicles: 1240, speed: 24, level: 'Heavy', signal: 'Active' },
+  { id: 2, name: 'Mexico Square', area: 'Kirkos', vehicles: 860, speed: 38, level: 'Moderate', signal: 'Active' },
+  { id: 3, name: 'Meskel Square', area: 'Kirkos', vehicles: 1530, speed: 16, level: 'Heavy', signal: 'Active' },
+  { id: 4, name: 'CMC Road', area: 'Yeka', vehicles: 540, speed: 48, level: 'Clear', signal: 'Active' },
+  { id: 5, name: 'Piassa Road', area: 'Arada', vehicles: 980, speed: 29, level: 'Moderate', signal: 'Maintenance' },
+  { id: 6, name: 'Africa Avenue', area: 'Bole', vehicles: 710, speed: 42, level: 'Clear', signal: 'Active' },
+]
+
+const initialSignals = [
+  { id: 1, location: 'Bole Road Junction', state: 'Green', duration: '35 sec' },
+  { id: 2, location: 'Meskel Square', state: 'Red', duration: '52 sec' },
+  { id: 3, location: 'Mexico Square', state: 'Yellow', duration: '5 sec' },
+  { id: 4, location: 'CMC Intersection', state: 'Green', duration: '28 sec' },
+]
+
+const navItems = [
+  { id: 'overview', label: 'Overview', icon: '▦' },
+  { id: 'traffic', label: 'Traffic Monitoring', icon: '⇄' },
+  { id: 'signals', label: 'Traffic Signals', icon: '◉' },
+  { id: 'reports', label: 'Reports', icon: '▤' },
+]
+
+function App() {
+  const [activePage, setActivePage] = useState('overview')
+  const [search, setSearch] = useState('')
+  const [filter, setFilter] = useState('All')
+  const [roads, setRoads] = useState(initialRoads)
+  const [lastUpdated, setLastUpdated] = useState(new Date())
+  const [notice, setNotice] = useState('')
+  const [mobileMenu, setMobileMenu] = useState(false)
+
+  const filteredRoads = useMemo(() => {
+    return roads.filter((road) => {
+      const matchesSearch =
+        road.name.toLowerCase().includes(search.toLowerCase()) ||
+        road.area.toLowerCase().includes(search.toLowerCase())
+
+      const matchesFilter = filter === 'All' || road.level === filter
+
+      return matchesSearch && matchesFilter
+    })
+  }, [roads, search, filter])
+
+  const totalVehicles = roads.reduce((sum, road) => sum + road.vehicles, 0)
+  const congestedRoads = roads.filter((road) => road.level === 'Heavy').length
+  const activeSignals = initialSignals.length
+  const averageSpeed = Math.round(
+    roads.reduce((sum, road) => sum + road.speed, 0) / roads.length,
+  )
+
+  function refreshDashboard() {
+    setLastUpdated(new Date())
+    setNotice('Dashboard refreshed. Demo data remains unchanged.')
+    window.setTimeout(() => setNotice(''), 3000)
+  }
+
+  function cycleSignal(signalId) {
+    const states = ['Red', 'Green', 'Yellow']
+
+    setNotice(
+      `Demo control selected for signal ${signalId}. No real traffic signal was changed.`,
+    )
+    window.setTimeout(() => setNotice(''), 3500)
+
+    // This is a demonstration control, not a real traffic-light connection.
+    console.info('Demo signal control:', states, signalId)
+  }
+
+  function exportReport() {
+    const csvRows = [
+      ['Road', 'Area', 'Vehicles', 'Average speed (km/h)', 'Congestion', 'Signal'],
+      ...roads.map((road) => [
+        road.name,
+        road.area,
+        road.vehicles,
+        road.speed,
+        road.level,
+        road.signal,
+      ]),
+    ]
+
+    const csv = csvRows
+      .map((row) =>
+        row.map((value) => `"${String(value).replaceAll('"', '""')}"`).join(','),
+      )
+      .join('\n')
+
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+
+    link.href = url
+    link.download = 'smart-city-traffic-report.csv'
+    link.click()
+    URL.revokeObjectURL(url)
+    setNotice('Traffic report downloaded.')
+    window.setTimeout(() => setNotice(''), 3000)
+  }
+
+  return (
+    <div className="app-shell">
+      <aside className={`sidebar ${mobileMenu ? 'sidebar-open' : ''}`}>
+        <div className="brand">
+          <div className="brand-icon">⌁</div>
+          <div>
+            <strong>TrafficFlow</strong>
+            <span>SMART CITY SYSTEM</span>
+          </div>
+          <button
+            className="close-menu"
+            onClick={() => setMobileMenu(false)}
+            aria-label="Close menu"
+          >
+            ×
+          </button>
+        </div>
+
+        <div className="sidebar-label">WORKSPACE</div>
+        <nav className="side-nav" aria-label="Main navigation">
+          {navItems.map((item) => (
+            <button
+              key={item.id}
+              className={`nav-item ${activePage === item.id ? 'nav-active' : ''}`}
+              onClick={() => {
+                setActivePage(item.id)
+                setMobileMenu(false)
+              }}
+            >
+              <span className="nav-icon">{item.icon}</span>
+              {item.label}
+              {item.id === 'traffic' && <span className="nav-count">6</span>}
+            </button>
+          ))}
+        </nav>
+
+        <div className="sidebar-bottom">
+          <div className="system-card">
+            <div className="system-card-top">
+              <span className="pulse-dot" />
+              <strong>System status</strong>
+            </div>
+            <p>Demo dashboard online</p>
+            <div className="status-track"><span /></div>
+            <small>Sample data · No live sensors</small>
+          </div>
+
+          <div className="profile">
+            <div className="avatar">AD</div>
+            <div className="profile-info">
+              <strong>City Administrator</strong>
+              <span>Traffic operations</span>
+            </div>
+            <span className="profile-dots">•••</span>
+          </div>
+        </div>
+      </aside>
+
+      {mobileMenu && (
+        <button
+          className="menu-backdrop"
+          aria-label="Close navigation"
+          onClick={() => setMobileMenu(false)}
+        />
+      )}
+
+      <main className="main-content">
+        <header className="topbar">
+          <div className="topbar-left">
+            <button
+              className="menu-toggle"
+              onClick={() => setMobileMenu(true)}
+              aria-label="Open navigation"
+            >
+              ☰
+            </button>
+            <div>
+              <div className="breadcrumb">Workspace <span>/</span> {navItems.find((item) => item.id === activePage)?.label}</div>
+              <h1>{activePage === 'overview' ? 'Traffic overview' : navItems.find((item) => item.id === activePage)?.label}</h1>
+            </div>
+          </div>
+
+          <div className="topbar-actions">
+            <div className="live-badge"><span /> Demo mode</div>
+            <button className="icon-button" onClick={refreshDashboard} aria-label="Refresh dashboard" title="Refresh dashboard">↻</button>
+            <button className="primary-button export-button" onClick={exportReport}>
+              <span>⇩</span> Export report
+            </button>
+          </div>
+        </header>
+
+        {notice && <div className="notice" role="status">{notice}</div>}
+
+        {activePage === 'overview' && (
+          <>
+            <section className="welcome-row">
+              <div>
+                <p className="eyebrow">CITY TRAFFIC INTELLIGENCE</p>
+                <h2>Good day, Administrator <span>✦</span></h2>
+                <p className="muted">Here’s what’s happening across the city’s roads.</p>
+              </div>
+              <div className="date-card">
+                <span className="date-icon">◷</span>
+                <div>
+                  <strong>{lastUpdated.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</strong>
+                  <span>Last updated {lastUpdated.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                </div>
+              </div>
+            </section>
+
+            <section className="stats-grid" aria-label="Traffic statistics">
+              <StatCard title="Vehicles monitored" value={totalVehicles.toLocaleString()} unit="vehicles" icon="▤" color="blue" note="Across 6 road segments" />
+              <StatCard title="Active signals" value={activeSignals} unit="signals" icon="◉" color="green" note="Demo signal locations" />
+              <StatCard title="Congested roads" value={congestedRoads} unit="roads" icon="⇄" color="orange" note="Require attention" />
+              <StatCard title="Average speed" value={averageSpeed} unit="km/h" icon="↗" color="purple" note="Across monitored roads" />
+            </section>
+
+            <section className="content-grid">
+              <div className="panel traffic-panel">
+                <div className="panel-heading">
+                  <div>
+                    <h3>Traffic flow overview</h3>
+                    <p>Illustrative road congestion by area</p>
+                  </div>
+                  <span className="small-tag">DEMO DATA</span>
+                </div>
+
+                <div className="traffic-map">
+                  <div className="map-grid" />
+                  <div className="map-road road-one"><span /></div>
+                  <div className="map-road road-two"><span /></div>
+                  <div className="map-road road-three"><span /></div>
+                  <div className="map-road road-four"><span /></div>
+                  <div className="map-road road-five"><span /></div>
+                  <div className="map-label label-bole">BOLE</div>
+                  <div className="map-label label-meskel">MESKEL SQ.</div>
+                  <div className="map-label label-mexico">MEXICO SQ.</div>
+                  <div className="map-label label-cmc">CMC</div>
+                  <div className="map-pin pin-one heavy-pin"><span>!</span></div>
+                  <div className="map-pin pin-two moderate-pin"><span>!</span></div>
+                  <div className="map-pin pin-three clear-pin"><span>✓</span></div>
+                  <div className="map-pin pin-four heavy-pin"><span>!</span></div>
+                  <div className="map-caption"><span className="pulse-dot" /> Illustrative traffic map</div>
+                </div>
+
+                <div className="map-legend">
+                  <span><i className="legend-dot clear-dot" /> Clear</span>
+                  <span><i className="legend-dot moderate-dot" /> Moderate</span>
+                  <span><i className="legend-dot heavy-dot" /> Heavy congestion</span>
+                </div>
+              </div>
+
+              <div className="panel signals-panel">
+                <div className="panel-heading">
+                  <div>
+                    <h3>Signal monitoring</h3>
+                    <p>Intersection status overview</p>
+                  </div>
+                  <button className="text-button" onClick={() => setActivePage('signals')}>View all →</button>
+                </div>
+
+                <div className="signal-list">
+                  {initialSignals.slice(0, 4).map((signal) => (
+                    <div className="signal-row" key={signal.id}>
+                      <div className={`traffic-light light-${signal.state.toLowerCase()}`}>
+                        <i /><i /><i />
+                      </div>
+                      <div className="signal-info">
+                        <strong>{signal.location}</strong>
+                        <span>Cycle: {signal.duration}</span>
+                      </div>
+                      <span className={`state-badge state-${signal.state.toLowerCase()}`}>{signal.state}</span>
+                    </div>
+                  ))}
+                </div>
+                <div className="panel-footer">
+                  <span><span className="pulse-dot" /> Signal statuses are simulated</span>
+                </div>
+              </div>
+            </section>
+
+            <RoadTable
+              roads={filteredRoads}
+              search={search}
+              setSearch={setSearch}
+              filter={filter}
+              setFilter={setFilter}
+              onViewAll={() => setActivePage('traffic')}
+            />
+          </>
+        )}
+
+        {activePage === 'traffic' && (
+          <section className="page-section">
+            <div className="page-intro">
+              <div><h2>Traffic monitoring</h2><p>Search road segments and inspect sample traffic conditions.</p></div>
+              <span className="small-tag">6 ROAD SEGMENTS</span>
+            </div>
+            <RoadTable roads={filteredRoads} search={search} setSearch={setSearch} filter={filter} setFilter={setFilter} />
+          </section>
+        )}
+
+        {activePage === 'signals' && (
+          <section className="page-section">
+            <div className="page-intro">
+              <div><h2>Traffic signals</h2><p>Sample intersection status. Controls are demonstrations only.</p></div>
+              <span className="small-tag">4 INTERSECTIONS</span>
+            </div>
+            <div className="signal-cards">
+              {initialSignals.map((signal) => (
+                <div className="panel signal-card" key={signal.id}>
+                  <div className="signal-card-heading"><span className="signal-card-icon">◉</span><span className={`state-badge state-${signal.state.toLowerCase()}`}>{signal.state}</span></div>
+                  <h3>{signal.location}</h3>
+                  <p>Sample signal cycle: {signal.duration}</p>
+                  <div className="signal-card-light"><div className={`traffic-light light-${signal.state.toLowerCase()}`}><i /><i /><i /></div><span>Simulated status</span></div>
+                  <button className="secondary-button" onClick={() => cycleSignal(signal.id)}>Test demo control</button>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {activePage === 'reports' && (
+          <section className="page-section">
+            <div className="page-intro"><div><h2>Traffic reports</h2><p>Export the current sample road data as a CSV file.</p></div></div>
+            <div className="panel report-panel">
+              <div className="report-icon">▤</div>
+              <h3>Road traffic summary</h3>
+              <p>Includes road name, area, vehicle count, average speed, congestion level, and signal status.</p>
+              <div className="report-summary"><span>Road segments <strong>{roads.length}</strong></span><span>Vehicles monitored <strong>{totalVehicles.toLocaleString()}</strong></span><span>Heavy congestion <strong>{congestedRoads}</strong></span></div>
+              <button className="primary-button" onClick={exportReport}>⇩ Download CSV report</button>
+            </div>
+          </section>
+        )}
+
+        <footer className="footer">
+          <span>TrafficFlow <span className="footer-dot">●</span> Smart City Traffic System</span>
+          <span>Prototype dashboard · Sample data only</span>
+        </footer>
+      </main>
+    </div>
+  )
+}
+
+function StatCard({ title, value, unit, icon, color, note }) {
+  return (
+    <article className="stat-card">
+      <div className="stat-top">
+        <span className={`stat-icon ${color}`}>{icon}</span>
+        <span className="stat-menu">•••</span>
+      </div>
+      <p className="stat-title">{title}</p>
+      <div className="stat-value">{value}<span>{unit}</span></div>
+      <div className="stat-note"><span className={`note-mark ${color}`}>↗</span>{note}</div>
+    </article>
+  )
+}
+
+function RoadTable({ roads, search, setSearch, filter, setFilter, onViewAll }) {
+  return (
+    <section className="panel roads-panel">
+      <div className="panel-heading roads-heading">
+        <div><h3>Road traffic status</h3><p>Vehicle activity and congestion by road segment</p></div>
+        {onViewAll && <button className="text-button" onClick={onViewAll}>View all roads →</button>}
+      </div>
+      <div className="table-tools">
+        <label className="search-box">
+          <span>⌕</span>
+          <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search roads or areas..." />
+        </label>
+        <label className="filter-box">
+          <span>Filter:</span>
+          <select value={filter} onChange={(event) => setFilter(event.target.value)}>
+            <option>All</option><option>Clear</option><option>Moderate</option><option>Heavy</option>
+          </select>
+        </label>
+      </div>
+      <div className="table-wrap">
+        <table>
+          <thead><tr><th>ROAD / AREA</th><th>VEHICLES</th><th>AVG. SPEED</th><th>CONGESTION</th><th>SIGNAL</th></tr></thead>
+          <tbody>
+            {roads.map((road) => (
+              <tr key={road.id}>
+                <td><strong>{road.name}</strong><span className="cell-subtitle">{road.area}</span></td>
+                <td>{road.vehicles.toLocaleString()}</td>
+                <td>{road.speed} <span className="cell-unit">km/h</span></td>
+                <td><span className={`congestion-badge congestion-${road.level.toLowerCase()}`}><i />{road.level}</span></td>
+                <td><span className={`signal-status ${road.signal === 'Active' ? 'signal-on' : 'signal-maintenance'}`}><i />{road.signal}</span></td>
+              </tr>
+            ))}
+            {roads.length === 0 && <tr><td colSpan="5" className="empty-state">No roads match your search. Try a different term or filter.</td></tr>}
+          </tbody>
+        </table>
+      </div>
+      <div className="table-bottom"><span>Showing <strong>{roads.length}</strong> road segments</span><span>Demo data only</span></div>
+    </section>
+  )
+}
+
+export default App
+```

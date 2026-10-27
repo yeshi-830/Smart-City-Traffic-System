@@ -126,8 +126,34 @@ test("incident API supports creation, retrieval, updates, and validation", async
     assert.equal(response.status, 400);
   });
 
-  await t.test("returns 404 for a nonexistent incident", async () => {
-    const response = await fetch(`${baseUrl}/api/incidents/999999`);
+   await t.test("rejects an invalid incident ID", async () => {
+    const response = await fetch(`${baseUrl}/api/incidents/abc`);
+    assert.equal(response.status, 400);
+  });
+
+  await t.test("rejects an invalid status", async () => {
+    const response = await fetch(
+      `${baseUrl}/api/incidents/${created.id}/status`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "closed" }),
+      },
+    );
+
+    assert.equal(response.status, 400);
+  });
+
+  await t.test("returns 404 when updating a nonexistent incident", async () => {
+    const response = await fetch(
+      `${baseUrl}/api/incidents/999999/status`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "resolved" }),
+      },
+    );
+
     assert.equal(response.status, 404);
   });
 });

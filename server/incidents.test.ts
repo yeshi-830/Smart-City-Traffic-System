@@ -15,6 +15,8 @@ const testDirectory = mkdtempSync(join(tmpdir(), "traffic-api-test-"));
 let server: Server;
 let baseUrl = "";
 let database: typeof import("./database.js").database;
+let recordTrafficReading: typeof import("./database.js").recordTrafficReading;
+let recordTrafficReadings: typeof import("./database.js").recordTrafficReadings;
 
 before(async () => {
   process.env.NODE_ENV = "test";
@@ -24,6 +26,8 @@ before(async () => {
   const databaseModule = await import("./database.js");
 
   database = databaseModule.database;
+  recordTrafficReading = databaseModule.recordTrafficReading;
+  recordTrafficReadings = databaseModule.recordTrafficReadings;
   server = appModule.app.listen(0);
   await once(server, "listening");
 
@@ -155,5 +159,103 @@ test("incident API supports creation, retrieval, updates, and validation", async
     );
 
     assert.equal(response.status, 404);
+  });
+});
+
+test("health and traffic-history endpoints use the SQLite database", async (t) => {
+  const healthResponse = await fetch(`${baseUrl}/api/health`);
+  assert.equal(healthResponse.status, 200);
+  const health = await healthResponse.json() as {
+    status: string;
+    database: string;
+  };
+  assert.deepEqual(
+    { status: health.status, database: health.database },
+    { status: "ok", database: "connected" },
+  );
+
+  recordTrafficReading({
+    intersectionId: "j-01",
+    vehiclesPerHour: 1200,
+    speed: 32,
+    congestion: "Moderate",
+    signalPhase: "Green",
+    waitSeconds: 39,
+  });
+
+  await t.test("returns saved readings and supports intersection filtering", async () => {
+    const response = await fetch(
+      `${baseUrl}/api/traffic/history?intersectionId=j-01&limit=10`,
+    );
+    assert.equal(response.status, 200);
+
+    const result = await response.json() as {
+      intersectionId: string;
+      readings: Array<{ intersectionId: string; vehiclesPerHour: number }>;
+    };
+    assert.equal(result.intersectionId, "j-01");
+    assert.equal(result.readings[0].intersectionId, "j-01");
+    assert.equal(result.readings[0].vehiclesPerHour, 1200);
+  });
+
+  await t.test("rejects unknown intersections and out-of-range limits", async () => {
+    const unknownIntersection = await fetch(
+      `${baseUrl}/api/traffic/history?intersectionId=unknown`,
+    );
+    assert.equal(unknownIntersection.status, 404);
+
+    const invalidLimit = await fetch(
+      `${baseUrl}/api/traffic/history?limit=1001`,
+    );
+    assert.equal(invalidLimit.status, 400);
+  });
+
+  await t.test("writes a batch atomically", async () => {
+    assert.throws(() => recordTrafficReadings([
+      {
+        intersectionId: "j-01",
+        vehiclesPerHour: 900,
+        speed: 30,
+        congestion: "Moderate",
+        signalPhase: "Green",
+        waitSeconds: 43,
+      },
+      {
+        intersectionId: "missing",
+        vehiclesPerHour: 800,
+        speed: 28,
+        congestion: "Heavy",
+        signalPhase: "Red",
+        waitSeconds: 47,
+      },
+    ]));
+
+    const readings = await fetch(
+      `${baseUrl}/api/traffic/history?intersectionId=j-01`,
+    ).then((response) => response.json()) as {
+      readings: Array<{ vehiclesPerHour: number }>;
+    };
+    assert.equal(readings.readings.length, 1);
+    assert.equal(readings.readings[0].vehiclesPerHour, 1200);
+  });
+});
+
+test("signal mode updates persist in SQLite and malformed JSON returns an API error", async () => {
+  const updateResponse = await fetch(
+    `${baseUrl}/api/intersections/j-01/optimize`,
+    { method: "POST" },
+  );
+  assert.equal(updateResponse.status, 200);
+  const updated = await updateResponse.json() as { mode: string };
+  assert.equal(updated.mode, "fixed");
+
+  const malformedJson = await fetch(`${baseUrl}/api/incidents`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: "{invalid",
+  });
+  assert.equal(malformedJson.status, 400);
+  assert.deepEqual(await malformedJson.json(), {
+    error: "Request body must contain valid JSON.",
   });
 });

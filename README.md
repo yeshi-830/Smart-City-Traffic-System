@@ -7,6 +7,7 @@ FlowCity is a responsive, full-stack traffic operations dashboard for prioritizi
 - Responsive traffic command-center dashboard with city map, performance chart, and corridor summary.
 - Eight sample intersections with simulated speed, congestion, queue, and signal-phase readings.
 - Persistent SQLite storage for signal-control settings and incidents.
+- Transactional traffic-reading history, sampled once per minute and retained for 30 days.
 - Incident reporting, severity-based response queue, and open → investigating → resolved workflow.
 - Operator-controlled adaptive/fixed signal modes, persisted between restarts.
 - Server-sent live dashboard updates every five seconds, with automatic browser reconnection.
@@ -47,6 +48,7 @@ The Express server serves the compiled client and API on port `4000`. Set `PORT`
 | `GET` | `/api/dashboard` | Summary, intersection readings, incident queue, recommendations, and traffic trend |
 | `GET` | `/api/events` | Server-sent dashboard updates, published every five seconds |
 | `GET` | `/api/intersections` | Monitored intersections and their latest simulated readings |
+| `GET` | `/api/traffic/history` | Saved traffic readings; optional `intersectionId` and `limit` query parameters |
 | `POST` | `/api/intersections/:id/optimize` | Toggle an intersection between adaptive and fixed signal modes |
 | `GET` | `/api/incidents` | List saved incidents |
 | `POST` | `/api/incidents` | Report an incident (`location`, `type`, `severity`, optional `intersectionId` and `description`) |

@@ -3,11 +3,14 @@ import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import {
   addIncident,
+  checkDatabaseConnection,
   countActiveIncidents,
   getIncident,
   getIntersection,
   listIncidents,
   listIntersections,
+  listTrafficHistory,
+  recordTrafficReadings,
   updateIncidentStatus,
   updateSignalMode,
   type IncidentSeverity,
@@ -21,7 +24,25 @@ const port = Number(process.env.PORT ?? 4000);
 app.use(express.json({ limit: "32kb" }));
 
 app.get("/api/health", (_request, response) => {
-  response.json({ status: "ok", dataMode: "simulated", timestamp: new Date().toISOString() });
+  try {
+    checkDatabaseConnection();
+  } catch (error) {
+    console.error("Database health check failed:", error);
+    response.status(503).json({
+      status: "error",
+      database: "unavailable",
+      dataMode: "simulated",
+      timestamp: new Date().toISOString(),
+    });
+    return;
+  }
+
+  response.json({
+    status: "ok",
+    database: "connected",
+    dataMode: "simulated",
+    timestamp: new Date().toISOString(),
+  });
 });
 
 function buildDashboard() {
@@ -30,6 +51,7 @@ function buildDashboard() {
     ...intersection,
     ...getTrafficReading(intersection),
   }));
+
   const incidents = listIncidents();
   const averageSpeed = Math.round(readings.reduce((total, item) => total + item.speed, 0) / readings.length);
   const severeCount = readings.filter((item) => item.congestion === "Severe").length;
@@ -88,6 +110,30 @@ app.get("/api/intersections", (_request, response) => {
     ...intersection,
     ...getTrafficReading(intersection),
   })));
+});
+
+app.get("/api/traffic/history", (request, response) => {
+  const intersectionId = request.query.intersectionId;
+  const requestedLimit = request.query.limit;
+  const limit = requestedLimit === undefined ? 100 : Number(requestedLimit);
+
+  if (intersectionId !== undefined && typeof intersectionId !== "string") {
+    response.status(400).json({ error: "Choose a valid monitored intersection." });
+    return;
+  }
+  if (intersectionId && !getIntersection(intersectionId)) {
+    response.status(404).json({ error: "Intersection not found." });
+    return;
+  }
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > 1000) {
+    response.status(400).json({ error: "History limit must be a whole number between 1 and 1000." });
+    return;
+  }
+
+  response.json({
+    intersectionId: intersectionId ?? null,
+    readings: listTrafficHistory(intersectionId, limit),
+  });
 });
 
 function summarizeIntersection(intersection: ReturnType<typeof getIntersection>) {
@@ -338,6 +384,21 @@ app.use("/api", (_request, response) => {
   response.status(404).json({ error: "API endpoint not found." });
 });
 
+app.use((
+  error: unknown,
+  _request: express.Request,
+  response: express.Response,
+  _next: express.NextFunction,
+) => {
+  if (error instanceof SyntaxError && "body" in error) {
+    response.status(400).json({ error: "Request body must contain valid JSON." });
+    return;
+  }
+
+  console.error("Unhandled API request error:", error);
+  response.status(500).json({ error: "An unexpected server error occurred." });
+});
+
 const builtFrontend = resolve("dist/client");
 if (existsSync(join(builtFrontend, "index.html"))) {
   app.use(express.static(builtFrontend));
@@ -347,6 +408,29 @@ if (existsSync(join(builtFrontend, "index.html"))) {
 export { app };
 
 if (process.env.NODE_ENV !== "test") {
+  const recordSnapshot = () => {
+    const readings = listIntersections().map((intersection) => ({
+      ...getTrafficReading(intersection),
+    }));
+    recordTrafficReadings(readings);
+  };
+
+  try {
+    recordSnapshot();
+  } catch (error) {
+    console.error("Unable to record the initial traffic snapshot:", error);
+    throw error;
+  }
+
+  const snapshotTimer = setInterval(() => {
+    try {
+      recordSnapshot();
+    } catch (error) {
+      console.error("Unable to record a traffic snapshot:", error);
+    }
+  }, 60_000);
+  snapshotTimer.unref();
+
   app.listen(port, () => {
     console.log(`FlowCity API listening on http://localhost:${port}`);
   });

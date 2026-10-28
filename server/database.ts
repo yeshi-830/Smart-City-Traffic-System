@@ -86,6 +86,11 @@ database.exec(`
     wait_seconds INTEGER NOT NULL,
     recorded_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
+
+  CREATE INDEX IF NOT EXISTS incidents_status_severity_reported_at
+    ON incidents (status, severity, reported_at DESC);
+  CREATE INDEX IF NOT EXISTS traffic_history_intersection_recorded_at
+    ON traffic_history (intersection_id, recorded_at DESC, id DESC);
 `);
 
 const seedIntersection = database.prepare(`
@@ -332,4 +337,49 @@ export function listTrafficHistory(
     ORDER BY recorded_at DESC, id DESC
     LIMIT ?
   `).all(safeLimit) as unknown as TrafficHistoryRecord[];
+}
+
+export function recordTrafficReadings(
+  readings: Array<Omit<TrafficHistoryRecord, "id" | "recordedAt">>,
+): void {
+  if (readings.length === 0) {
+    return;
+  }
+
+  const insert = database.prepare(`
+    INSERT INTO traffic_history (
+      intersection_id,
+      vehicles_per_hour,
+      speed,
+      congestion,
+      signal_phase,
+      wait_seconds
+    ) VALUES (?, ?, ?, ?, ?, ?)
+  `);
+
+  database.exec("BEGIN IMMEDIATE");
+  try {
+    for (const reading of readings) {
+      insert.run(
+        reading.intersectionId,
+        reading.vehiclesPerHour,
+        reading.speed,
+        reading.congestion,
+        reading.signalPhase,
+        reading.waitSeconds,
+      );
+    }
+
+    database.prepare(
+      "DELETE FROM traffic_history WHERE recorded_at < datetime('now', '-30 days')",
+    ).run();
+    database.exec("COMMIT");
+  } catch (error) {
+    database.exec("ROLLBACK");
+    throw error;
+  }
+}
+
+export function checkDatabaseConnection(): void {
+  database.prepare("SELECT 1").get();
 }

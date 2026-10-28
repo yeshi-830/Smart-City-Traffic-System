@@ -344,6 +344,10 @@ if (existsSync(join(builtFrontend, "index.html"))) {
   app.get("/{*path}", (_request, response) => response.sendFile(join(builtFrontend, "index.html")));
 }
 
-app.listen(port, () => {
-  console.log(`FlowCity API listening on http://localhost:${port}`);
-});
+export { app };
+
+if (process.env.NODE_ENV !== "test") {
+  app.listen(port, () => {
+    console.log(`FlowCity API listening on http://localhost:${port}`);
+  });
+}

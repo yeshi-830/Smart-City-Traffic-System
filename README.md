@@ -1,7 +1,6 @@
-<<<<<<< HEAD
 # FlowCity Traffic Operations
 
-FlowCity is a responsive, full-stack traffic operations MVP for prioritizing intersection bottlenecks, recording incidents, and coordinating operator-controlled signal plans. It ships with clearly labelled **simulated** traffic readings and sample city locations; it does not connect to real sensors, emergency services, a city map provider, or live weather services.
+FlowCity is a responsive, full-stack traffic operations dashboard for prioritizing intersection bottlenecks, recording incidents, and coordinating operator-reviewed signal plans. Traffic readings and locations are **simulated**; the app does not connect to real sensors, emergency services, a city map provider, or live weather services.
 
 ## Features
 
@@ -10,8 +9,10 @@ FlowCity is a responsive, full-stack traffic operations MVP for prioritizing int
 - Persistent SQLite storage for signal-control settings and incidents.
 - Incident reporting, severity-based response queue, and open → investigating → resolved workflow.
 - Operator-controlled adaptive/fixed signal modes, persisted between restarts.
-- 30-second dashboard refresh, search, accessible controls, and inline API error feedback.
-- Focused tests for traffic reading bounds and trend output.
+- Server-sent live dashboard updates every five seconds, with automatic browser reconnection.
+- Explainable, priority-ranked recommendations based on simulated congestion and unresolved incident severity.
+- Search, accessible controls, and inline API error feedback.
+- Focused tests for traffic reading bounds, trend output, and recommendation prioritization.
 
 ## Requirements
 
@@ -43,7 +44,8 @@ The Express server serves the compiled client and API on port `4000`. Set `PORT`
 | Method | Endpoint | Purpose |
 | --- | --- | --- |
 | `GET` | `/api/health` | Health check and data-mode indicator |
-| `GET` | `/api/dashboard` | Summary, intersection readings, incident queue, and traffic trend |
+| `GET` | `/api/dashboard` | Summary, intersection readings, incident queue, recommendations, and traffic trend |
+| `GET` | `/api/events` | Server-sent dashboard updates, published every five seconds |
 | `GET` | `/api/intersections` | Monitored intersections and their latest simulated readings |
 | `POST` | `/api/intersections/:id/optimize` | Toggle an intersection between adaptive and fixed signal modes |
 | `GET` | `/api/incidents` | List saved incidents |
@@ -53,7 +55,3 @@ The Express server serves the compiled client and API on port `4000`. Set `PORT`
 ## Bringing the system online with real data
 
 Replace `server/traffic.ts`'s simulation with normalized observations from an authorized traffic-sensor feed, validate freshness and units at the ingestion boundary, and expose sensor connectivity/quality alongside each reading. Production signal control also needs authenticated, role-based operator access, an auditable approval/safety policy, vendor-specific controller integration, and fail-safe behavior when connectivity or sensor quality is lost. The included signal-mode action is a persisted demo control, not a command to physical signals.
-=======
-# Smart-City-Traffic-System
-A Smart City Traffic Management System built with React, TypeScript, and Node.js to visualize traffic conditions, monitor congestion, and support more efficient urban traffic management.
->>>>>>> 08af671518494922303c3c0216201a063dfec396

@@ -40,7 +40,18 @@ export interface DashboardData {
   };
   intersections: Intersection[];
   incidents: Incident[];
+  recommendations: TrafficRecommendation[];
   trend: { time: string; volume: number }[];
   updatedAt: string;
   dataMode: "simulated";
+}
+
+export interface TrafficRecommendation {
+  id: string;
+  kind: "incident" | "intersection";
+  targetId: string;
+  priority: "critical" | "high";
+  title: string;
+  reason: string;
+  actionLabel: string;
 }

@@ -76,6 +76,8 @@ button:disabled { cursor: wait; opacity: .72; }
 .heading-kicker > span:nth-child(2) { color: #c6ceca; }
 .live-pulse { position: relative; width: 6px; height: 6px; border-radius: 50%; background: #53aa77; }
 .live-pulse::after { position: absolute; inset: -3px; border: 1px solid #53aa77; border-radius: 50%; content: ""; animation: pulse 2s infinite; }
+.live-pulse.disconnected { background: #d28a55; }
+.live-pulse.disconnected::after { border-color: #d28a55; animation: none; }
 @keyframes pulse { 50% { opacity: .3; transform: scale(1.55); } }
 h1, h2, p { margin: 0; }
 .page-heading h1 { margin-top: 9px; color: #202b25; font-family: "Manrope", sans-serif; font-size: clamp(23px, 2vw, 29px); font-weight: 700; letter-spacing: -.9px; }
@@ -96,6 +98,25 @@ h1, h2, p { margin: 0; }
 .error-banner span, .error-banner code { color: #92796e; font-size: 10px; }
 .error-banner code { color: #795340; }
 .error-banner .text-button { color: #9b5141; }
+.recommendations-card { margin: 16px 0; padding: 16px 18px 12px; border: 1px solid #e3ece6; border-radius: 10px; background: linear-gradient(115deg, #fff 0%, #f9fcfa 100%); box-shadow: var(--card-shadow); }
+.recommendations-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+.recommendations-heading h2 { margin-top: 4px; color: #29332e; font-family: "Manrope", sans-serif; font-size: 14px; font-weight: 700; letter-spacing: -.3px; }
+.recommendations-note { display: flex; align-items: center; gap: 5px; color: #829188; font-size: 8px; }
+.recommendations-note svg { color: #4b9573; }
+.recommendation-list { display: grid; }
+.recommendation-item { display: flex; align-items: center; gap: 11px; padding: 10px 2px; border-top: 1px solid #edf1ee; }
+.recommendation-icon { display: grid; width: 30px; height: 30px; flex: none; place-items: center; border-radius: 8px; background: #fff4e8; color: #cd8741; }
+.recommendation-item.critical .recommendation-icon { background: #fff0ed; color: #c86b58; }
+.recommendation-copy { min-width: 0; flex: 1; }
+.recommendation-copy > div { display: flex; align-items: center; gap: 7px; }
+.recommendation-copy strong { overflow: hidden; color: #435148; font-size: 10px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+.recommendation-copy p { margin-top: 4px; color: #89968e; font-size: 9px; line-height: 1.5; }
+.recommendation-priority { flex: none; padding: 3px 5px; border-radius: 4px; background: #fff2e3; color: #b77b37; font-size: 7px; font-weight: 700; letter-spacing: .3px; text-transform: uppercase; }
+.recommendation-priority.critical { background: #ffefec; color: #b75f50; }
+.recommendation-action { display: flex; flex: none; align-items: center; gap: 6px; padding: 7px 9px; border: 1px solid #e3ebe5; border-radius: 6px; background: white; color: #3f795e; cursor: pointer; font-size: 8px; font-weight: 600; }
+.recommendation-action:hover { background: #f0f7f2; }
+.recommendations-clear { display: flex; align-items: center; gap: 8px; padding: 13px 0; border-top: 1px solid #edf1ee; color: #72897b; font-size: 9px; }
+.recommendations-disclaimer { margin-top: 4px; color: #9aa49e; font-size: 8px; line-height: 1.5; }
 .metrics-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin-bottom: 17px; }
 .metric-card, .map-card, .traffic-card, .incidents-card, .intersection-card { min-width: 0; border: 1px solid #eaeeec; border-radius: 10px; background: white; box-shadow: var(--card-shadow); }
 .metric-card { position: relative; min-height: 122px; overflow: hidden; padding: 14px 15px 12px; }
@@ -182,6 +203,8 @@ h1, h2, p { margin: 0; }
 .heading-count { display: inline-grid; min-width: 19px; height: 19px; margin-left: 3px; padding: 0 5px; place-items: center; border-radius: 6px; background: #fff2ec; color: #c97852; font-family: "DM Sans", sans-serif; font-size: 9px; vertical-align: 1px; }
 .incident-list { display: grid; }
 .incident-row { display: flex; min-height: 72px; align-items: center; gap: 10px; border-top: 1px solid #f0f2f0; }
+.incident-row.recommended { position: relative; border-radius: 6px; background: #fff9f4; box-shadow: inset 3px 0 #df9a55; }
+.incident-row:focus { outline: 2px solid #d89a5d; outline-offset: -2px; }
 .incident-icon { display: grid; width: 31px; height: 31px; flex: none; place-items: center; border-radius: 8px; }
 .incident-icon.high, .incident-icon.critical { background: #fcf0ec; color: #c66f56; }
 .incident-icon.medium { background: #fcf5e9; color: #c38f48; }
@@ -318,6 +341,10 @@ h1, h2, p { margin: 0; }
   .heading-actions { width: 100%; }
   .heading-actions .button-primary { flex: 1; }
   .metric-card { min-height: 117px; }
+  .recommendations-card { margin-block: 12px; padding-inline: 13px; }
+  .recommendation-item { align-items: flex-start; flex-wrap: wrap; }
+  .recommendation-copy { width: calc(100% - 42px); flex: none; }
+  .recommendation-action { margin-left: 41px; }
   .dashboard-footer { flex-wrap: wrap; gap: 8px 14px; padding-block: 10px; }
   .dashboard-footer > span:nth-child(3) { order: 5; width: 100%; }
 }

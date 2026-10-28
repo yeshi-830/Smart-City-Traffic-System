@@ -1,6 +1,16 @@
-import type { Intersection } from "./database.js";
+import type { Incident, Intersection } from "./database.js";
 
 export type CongestionLevel = "Clear" | "Moderate" | "Heavy" | "Severe";
+
+export interface TrafficRecommendation {
+  id: string;
+  kind: "incident" | "intersection";
+  targetId: string;
+  priority: "critical" | "high";
+  title: string;
+  reason: string;
+  actionLabel: string;
+}
 
 export interface TrafficReading {
   intersectionId: string;
@@ -9,6 +19,51 @@ export interface TrafficReading {
   congestion: CongestionLevel;
   signalPhase: "Green" | "Yellow" | "Red";
   waitSeconds: number;
+}
+
+export function buildTrafficRecommendations(
+  intersections: Array<Intersection & TrafficReading>,
+  incidents: Incident[],
+): TrafficRecommendation[] {
+  const recommendations: Array<TrafficRecommendation & { rank: number }> = [];
+
+  for (const incident of incidents) {
+    if (incident.status === "resolved" || !["critical", "high"].includes(incident.severity)) {
+      continue;
+    }
+    recommendations.push({
+      id: `incident-${incident.id}`,
+      kind: "incident",
+      targetId: String(incident.id),
+      priority: incident.severity,
+      title: `Review ${incident.type.toLowerCase()} at ${incident.location}`,
+      reason: `${incident.severity[0].toUpperCase()}${incident.severity.slice(1)} priority · ${incident.status} · verify conditions and coordinate the appropriate response.`,
+      actionLabel: "Review incident",
+      rank: incident.severity === "critical" ? 100 : 70,
+    });
+  }
+
+  for (const intersection of intersections) {
+    if (intersection.congestion !== "Severe" && intersection.congestion !== "Heavy") {
+      continue;
+    }
+    const severe = intersection.congestion === "Severe";
+    recommendations.push({
+      id: `intersection-${intersection.id}`,
+      kind: "intersection",
+      targetId: intersection.id,
+      priority: severe ? "critical" : "high",
+      title: `Review congestion at ${intersection.name}`,
+      reason: `Traffic is ${intersection.congestion.toLowerCase()} at ${intersection.speed} mph with ${intersection.waitSeconds}s average waits. ${intersection.mode === "fixed" ? "Consider simulating adaptive timing." : "Check for a downstream incident before adjusting timing."}`,
+      actionLabel: "Review signal plan",
+      rank: severe ? 90 : 60,
+    });
+  }
+
+  return recommendations
+    .sort((left, right) => right.rank - left.rank || left.title.localeCompare(right.title))
+    .slice(0, 3)
+    .map(({ rank: _rank, ...recommendation }) => recommendation);
 }
 
 export function getTrafficReading(intersection: Intersection, now = new Date()): TrafficReading {

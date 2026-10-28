@@ -7,7 +7,7 @@ import {
 } from "lucide-react";
 import CityMap from "./components/CityMap";
 import TrafficChart from "./components/TrafficChart";
-import type { DashboardData, Incident, IncidentSeverity, IncidentStatus, Intersection } from "./types";
+import type { DashboardData, Incident, IncidentSeverity, IncidentStatus, Intersection, TrafficRecommendation } from "./types";
 
 const severityOptions: IncidentSeverity[] = ["low", "medium", "high", "critical"];
 
@@ -39,6 +39,8 @@ export default function App() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [liveConnected, setLiveConnected] = useState(false);
+  const [focusedIncidentId, setFocusedIncidentId] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
   const [showIncidentForm, setShowIncidentForm] = useState(false);
@@ -66,8 +68,20 @@ export default function App() {
 
   useEffect(() => {
     void refresh();
-    const interval = window.setInterval(() => void refresh(true), 30_000);
-    return () => window.clearInterval(interval);
+    const stream = new EventSource("/api/events");
+    stream.onopen = () => setLiveConnected(true);
+    stream.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data) as DashboardData;
+        setDashboard(data);
+        setError("");
+        setLoading(false);
+      } catch (cause) {
+        setError(cause instanceof Error ? `Invalid live dashboard update: ${cause.message}` : "Invalid live dashboard update.");
+      }
+    };
+    stream.onerror = () => setLiveConnected(false);
+    return () => stream.close();
   }, [refresh]);
 
   useEffect(() => {
@@ -145,6 +159,22 @@ export default function App() {
     }
   }
 
+  function openRecommendation(recommendation: TrafficRecommendation) {
+    if (recommendation.kind === "incident") {
+      setFocusedIncidentId(recommendation.targetId);
+      document.getElementById("incidents")?.scrollIntoView({ behavior: "smooth", block: "center" });
+      window.setTimeout(() => {
+        const row = document.getElementById(`incident-${recommendation.targetId}`);
+        row?.scrollIntoView({ behavior: "smooth", block: "center" });
+        row?.focus();
+      }, 250);
+      return;
+    }
+
+    setSelectedId(recommendation.targetId);
+    window.setTimeout(() => document.getElementById("intersections")?.scrollIntoView({ behavior: "smooth", block: "center" }), 40);
+  }
+
   const summary = dashboard?.summary;
   const now = new Date();
   const timeDisplay = now.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
@@ -173,8 +203,8 @@ export default function App() {
         </nav>
         <div className="sidebar-bottom">
           <div className="system-card">
-            <div className="system-card-heading"><span className={`system-online-dot${error ? " status-offline" : ""}`} />SYSTEM STATUS<span>DEMO</span></div>
-            <strong>{error ? "API connection unavailable" : loading ? "Connecting to operations" : "All systems operational"}</strong>
+            <div className="system-card-heading"><span className={`system-online-dot${!liveConnected ? " status-offline" : ""}`} />LIVE SIMULATION<span>DEMO</span></div>
+            <strong>{error ? "API connection unavailable" : liveConnected ? "Live feed connected" : "Reconnecting to live feed"}</strong>
             <div className="system-subline"><span>Traffic readings</span><span className="data-source">SIMULATED</span></div>
           </div>
           <div className="user-profile">
@@ -203,7 +233,7 @@ export default function App() {
         <div className="dashboard">
           <div className="page-heading">
             <div>
-              <div className="heading-kicker"><span className="live-pulse" />TRAFFIC COMMAND CENTER <span>·</span> {dateDisplay}</div>
+              <div className="heading-kicker"><span className={`live-pulse${liveConnected ? "" : " disconnected"}`} />{liveConnected ? "LIVE SIMULATION" : "RECONNECTING"} <span>·</span> {dateDisplay}</div>
               <h1>Good {greeting}, Jordan <span className="wave">✳</span></h1>
               <p>Here’s what’s happening across Metro City today.</p>
             </div>
@@ -244,6 +274,37 @@ export default function App() {
             </article>
           </section>
 
+          <section className="recommendations-card" aria-labelledby="recommendations-title">
+            <div className="recommendations-heading">
+              <div>
+                <span className="eyebrow">DECISION SUPPORT · OPERATOR REVIEW</span>
+                <h2 id="recommendations-title">Recommended next steps</h2>
+              </div>
+              <span className="recommendations-note"><Sparkles size={13} />Rule-based · simulated data</span>
+            </div>
+            {loading && !dashboard ? (
+              <div className="recommendations-clear">Waiting for the first live traffic update…</div>
+            ) : (dashboard?.recommendations ?? []).length > 0 ? (
+              <div className="recommendation-list">
+                {dashboard?.recommendations.map((recommendation) => (
+                  <article className={`recommendation-item ${recommendation.priority}`} key={recommendation.id}>
+                    <span className="recommendation-icon"><AlertTriangle size={16} /></span>
+                    <div className="recommendation-copy">
+                      <div><span className={`recommendation-priority ${recommendation.priority}`}>{recommendation.priority}</span><strong>{recommendation.title}</strong></div>
+                      <p>{recommendation.reason}</p>
+                    </div>
+                    <button className="recommendation-action" onClick={() => openRecommendation(recommendation)}>
+                      {recommendation.actionLabel}<ArrowRight size={14} />
+                    </button>
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <div className="recommendations-clear"><ShieldCheck size={17} />No urgent actions suggested. Continue routine monitoring.</div>
+            )}
+            <p className="recommendations-disclaimer">Recommendations are decision support only. Review conditions before taking action; no physical signals are controlled.</p>
+          </section>
+
           <div className="content-grid">
             <div className="primary-column">
               <CityMap
@@ -273,7 +334,7 @@ export default function App() {
                 </div>
                 <div className="incident-list">
                   {(dashboard?.incidents ?? []).filter((item) => item.status !== "resolved").map((incident) => (
-                    <IncidentRow key={incident.id} incident={incident} onAdvance={() => void changeIncidentStatus(incident, incident.status === "open" ? "investigating" : "resolved")} />
+                    <IncidentRow key={incident.id} incident={incident} recommended={focusedIncidentId === String(incident.id)} onAdvance={() => void changeIncidentStatus(incident, incident.status === "open" ? "investigating" : "resolved")} />
                   ))}
                   {!loading && (dashboard?.incidents.filter((item) => item.status !== "resolved").length ?? 0) === 0 && <div className="empty-incidents"><ShieldCheck size={24} /><strong>All clear</strong><span>No active incidents in the response queue.</span></div>}
                 </div>
@@ -338,10 +399,10 @@ export default function App() {
   );
 }
 
-function IncidentRow({ incident, onAdvance }: { incident: Incident; onAdvance: () => void }) {
+function IncidentRow({ incident, recommended, onAdvance }: { incident: Incident; recommended: boolean; onAdvance: () => void }) {
   const Icon = incident.type.toLowerCase().includes("roadwork") ? Construction : incident.type.toLowerCase().includes("collision") ? CarFront : AlertTriangle;
   return (
-    <article className="incident-row">
+    <article className={`incident-row${recommended ? " recommended" : ""}`} id={`incident-${incident.id}`} tabIndex={-1}>
       <span className={`incident-icon ${incident.severity}`}><Icon size={16} /></span>
       <div className="incident-copy"><strong>{incident.type}</strong><span><MapPin size={12} />{incident.location}</span><small><Clock3 size={11} />{formatTime(incident.reportedAt)}</small></div>
       <div className="incident-controls"><span className={`severity-badge ${incident.severity}`}>{incident.severity}</span><button className="incident-action" onClick={onAdvance} aria-label={incident.status === "open" ? "Start investigating incident" : "Resolve incident"} title={incident.status === "open" ? "Start investigating" : "Resolve incident"}>{incident.status === "open" ? <ArrowRight size={15} /> : <Check size={15} />}</button></div>

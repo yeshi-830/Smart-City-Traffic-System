@@ -13,7 +13,7 @@ import {
   type IncidentSeverity,
   type IncidentStatus,
 } from "./database.js";
-import { buildTrafficTrend, getTrafficReading } from "./traffic.js";
+import { buildTrafficRecommendations, buildTrafficTrend, getTrafficReading } from "./traffic.js";
 
 const app = express();
 const port = Number(process.env.PORT ?? 4000);
@@ -24,7 +24,7 @@ app.get("/api/health", (_request, response) => {
   response.json({ status: "ok", dataMode: "simulated", timestamp: new Date().toISOString() });
 });
 
-app.get("/api/dashboard", (_request, response) => {
+function buildDashboard() {
   const intersections = listIntersections();
   const readings = intersections.map((intersection) => ({
     ...intersection,
@@ -34,7 +34,7 @@ app.get("/api/dashboard", (_request, response) => {
   const averageSpeed = Math.round(readings.reduce((total, item) => total + item.speed, 0) / readings.length);
   const severeCount = readings.filter((item) => item.congestion === "Severe").length;
 
-  response.json({
+  return {
     summary: {
       monitoredIntersections: readings.length,
       averageSpeed,
@@ -45,10 +45,42 @@ app.get("/api/dashboard", (_request, response) => {
     },
     intersections: readings,
     incidents: incidents.slice(0, 8),
+    recommendations: buildTrafficRecommendations(readings, incidents.slice(0, 8)),
     trend: buildTrafficTrend(),
     updatedAt: new Date().toISOString(),
     dataMode: "simulated",
+  };
+}
+
+app.get("/api/dashboard", (_request, response) => {
+  response.json(buildDashboard());
+});
+
+app.get("/api/events", (request, response) => {
+  response.set({
+    "Cache-Control": "no-cache, no-transform",
+    Connection: "keep-alive",
+    "Content-Type": "text/event-stream",
+    "X-Accel-Buffering": "no",
   });
+  response.flushHeaders();
+
+  const sendDashboard = () => {
+    response.write(`data: ${JSON.stringify(buildDashboard())}\n\n`);
+  };
+
+  sendDashboard();
+  const interval = setInterval(() => {
+    try {
+      sendDashboard();
+    } catch (error) {
+      console.error("Unable to publish a live dashboard update:", error);
+      clearInterval(interval);
+      response.end();
+    }
+  }, 5_000);
+
+  response.on("close", () => clearInterval(interval));
 });
 
 app.get("/api/intersections", (_request, response) => {

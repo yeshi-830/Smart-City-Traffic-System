@@ -56,7 +56,7 @@ app.get("/api/dashboard", (_request, response) => {
   response.json(buildDashboard());
 });
 
-app.get("/api/events", (request, response) => {
+app.get("/api/events", (_request, response) => {
   response.set({
     "Cache-Control": "no-cache, no-transform",
     Connection: "keep-alive",

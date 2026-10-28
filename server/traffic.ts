@@ -28,7 +28,10 @@ export function buildTrafficRecommendations(
   const recommendations: Array<TrafficRecommendation & { rank: number }> = [];
 
   for (const incident of incidents) {
-    if (incident.status === "resolved" || !["critical", "high"].includes(incident.severity)) {
+    if (
+      incident.status === "resolved" ||
+      (incident.severity !== "critical" && incident.severity !== "high")
+    ) {
       continue;
     }
     recommendations.push({

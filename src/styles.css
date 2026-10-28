@@ -359,3 +359,142 @@ h1, h2, p { margin: 0; }
   .chart-summary-label { font-size: 8px; }
   .incident-modal { padding: 17px; }
 }
+
+.chart-range, .incident-filter { position: relative; display: inline-flex; align-items: center; }
+.chart-range .select-button { min-width: 112px; appearance: none; padding-right: 27px; }
+.chart-range > svg { position: absolute; right: 8px; pointer-events: none; color: #78847d; }
+.incident-filter { height: 30px; gap: 5px; padding: 0 7px; border: 1px solid #e8eeea; border-radius: 6px; color: #85918b; }
+.incident-filter select { max-width: 105px; border: 0; outline: 0; appearance: none; background: transparent; color: #78847d; cursor: pointer; font-size: 8px; }
+.incident-filter > svg:last-child { pointer-events: none; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; clip-path: inset(50%); }
+.help-content { display: grid; gap: 13px; color: #68766e; font-size: 11px; line-height: 1.65; }
+.help-content strong { color: #35443b; }
+.help-disclaimer { padding-top: 11px; border-top: 1px solid #edf0ee; color: #9a8174; font-size: 9px; }
+.notification-list { display: grid; max-height: min(55vh, 420px); overflow-y: auto; }
+.notification-item { display: flex; min-height: 58px; align-items: center; gap: 11px; padding: 9px 3px; border: 0; border-top: 1px solid #edf0ee; background: transparent; text-align: left; cursor: pointer; }
+.notification-item:hover { background: #f7faf8; }
+.notification-item > span:nth-child(2) { display: grid; min-width: 0; flex: 1; gap: 4px; }
+.notification-item strong { overflow: hidden; color: #435148; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.notification-item small { color: #89968e; font-size: 9px; }
+.notification-item > svg { color: #7e9b89; }
+
+html[data-theme="dark"] {
+  color-scheme: dark;
+  background: #111915;
+  color: #e2ebe5;
+  --ink: #e2ebe5;
+  --muted: #9aa9a0;
+  --line: #2b3931;
+  --card-shadow: 0 2px 10px rgba(0, 0, 0, .14), 0 12px 28px rgba(0, 0, 0, .1);
+}
+html[data-theme="dark"] body { background: #111915; color: #e2ebe5; }
+html[data-theme="dark"] .sidebar,
+html[data-theme="dark"] .topbar { border-color: #29362f; background: rgba(24, 34, 29, .96); }
+html[data-theme="dark"] .workspace-picker,
+html[data-theme="dark"] .system-card,
+html[data-theme="dark"] .recommendations-card,
+html[data-theme="dark"] .metric-card,
+html[data-theme="dark"] .map-card,
+html[data-theme="dark"] .traffic-card,
+html[data-theme="dark"] .incidents-card,
+html[data-theme="dark"] .intersection-card { border-color: #2b3931; background: #19231e; }
+html[data-theme="dark"] .recommendations-card { background: linear-gradient(115deg, #19231e, #1b2922); }
+html[data-theme="dark"] .system-card,
+html[data-theme="dark"] .intersection-detail { background: #202c25; }
+html[data-theme="dark"] .user-profile,
+html[data-theme="dark"] .dashboard-footer,
+html[data-theme="dark"] .form-footer,
+html[data-theme="dark"] .help-disclaimer { border-color: #2b3931; }
+html[data-theme="dark"] .brand-name,
+html[data-theme="dark"] .breadcrumbs strong,
+html[data-theme="dark"] .page-heading h1,
+html[data-theme="dark"] .recommendations-heading h2,
+html[data-theme="dark"] .map-topline h2,
+html[data-theme="dark"] .section-head h2,
+html[data-theme="dark"] .metric-value,
+html[data-theme="dark"] .chart-value,
+html[data-theme="dark"] .incident-copy > strong,
+html[data-theme="dark"] .intersection-name > strong,
+html[data-theme="dark"] .intersection-speed > strong,
+html[data-theme="dark"] .detail-header > div > strong,
+html[data-theme="dark"] .detail-stats strong,
+html[data-theme="dark"] .recommendation-copy strong { color: #e2ebe5; }
+html[data-theme="dark"] .page-heading p,
+html[data-theme="dark"] .metric-foot,
+html[data-theme="dark"] .recommendation-copy p,
+html[data-theme="dark"] .recommendations-disclaimer,
+html[data-theme="dark"] .map-footer,
+html[data-theme="dark"] .chart-summary-label,
+html[data-theme="dark"] .chart-foot,
+html[data-theme="dark"] .incident-copy > span,
+html[data-theme="dark"] .incident-copy > small,
+html[data-theme="dark"] .intersection-name > span,
+html[data-theme="dark"] .intersection-speed > span,
+html[data-theme="dark"] .intersection-footer,
+html[data-theme="dark"] .operator-note,
+html[data-theme="dark"] .dashboard-footer,
+html[data-theme="dark"] .breadcrumbs,
+html[data-theme="dark"] .weather-chip,
+html[data-theme="dark"] .clock { color: #9aa9a0; }
+html[data-theme="dark"] .brand-name small { color: #9aa9a0; }
+html[data-theme="dark"] .nav-link { color: #a4b1a9; }
+html[data-theme="dark"] .nav-link:hover,
+html[data-theme="dark"] .intersection-row:hover,
+html[data-theme="dark"] .intersection-row.selected { background: #23332a; color: #e2ebe5; }
+html[data-theme="dark"] .nav-link.active { background: #21382b; color: #9bd0ae; }
+html[data-theme="dark"] .workspace-picker,
+html[data-theme="dark"] .search-field,
+html[data-theme="dark"] .incident-filter,
+html[data-theme="dark"] .select-button,
+html[data-theme="dark"] .button-secondary,
+html[data-theme="dark"] .recommendation-action,
+html[data-theme="dark"] .optimize-button,
+html[data-theme="dark"] .map-layer-button,
+html[data-theme="dark"] .map-location-button { border-color: #35443b; background-color: #202c25; color: #c1d0c6; }
+html[data-theme="dark"] .button-secondary:hover,
+html[data-theme="dark"] .recommendation-action:hover,
+html[data-theme="dark"] .optimize-button:hover,
+html[data-theme="dark"] .incident-add:hover { background: #293a30; }
+html[data-theme="dark"] .search-field input,
+html[data-theme="dark"] .incident-filter select { color: #e2ebe5; }
+html[data-theme="dark"] .search-field input::placeholder { color: #84948a; }
+html[data-theme="dark"] .chart-grid-line,
+html[data-theme="dark"] .incident-row,
+html[data-theme="dark"] .intersection-row,
+html[data-theme="dark"] .notification-item,
+html[data-theme="dark"] .empty-incidents { border-color: #2b3931; }
+html[data-theme="dark"] .chart-time { fill: #9aa9a0; }
+html[data-theme="dark"] .chart-point { fill: #19231e; }
+html[data-theme="dark"] .metric-progress { background: #29382f; }
+html[data-theme="dark"] .metric-trend.metric-demo-tag { background: #28352d; color: #a1aea5; }
+html[data-theme="dark"] .city-map svg { filter: brightness(.78) saturate(.82); }
+html[data-theme="dark"] .map-legend,
+html[data-theme="dark"] .map-location-button { background: rgba(30, 42, 35, .95); }
+html[data-theme="dark"] .map-marker-label { stroke: #25352b; }
+html[data-theme="dark"] .incident-row.recommended { background: #332a21; }
+html[data-theme="dark"] .incident-add { border-color: #2b3931; background: #19231e; color: #9bd0ae; }
+html[data-theme="dark"] .empty-incidents strong { color: #d7e5dc; }
+html[data-theme="dark"] .mode-badge.fixed { background: #303832; color: #bac4bd; }
+html[data-theme="dark"] .incident-modal,
+html[data-theme="dark"] .toast { border-color: #35443b; background: #1c2821; color: #e2ebe5; }
+html[data-theme="dark"] .modal-heading h2,
+html[data-theme="dark"] .help-content strong { color: #e2ebe5; }
+html[data-theme="dark"] .modal-heading p,
+html[data-theme="dark"] .help-content { color: #a8b5ac; }
+html[data-theme="dark"] .incident-modal input,
+html[data-theme="dark"] .incident-modal select,
+html[data-theme="dark"] .incident-modal textarea { border-color: #35443b; background: #151e19; color: #e2ebe5; }
+html[data-theme="dark"] .incident-modal input::placeholder,
+html[data-theme="dark"] .incident-modal textarea::placeholder { color: #85948a; }
+html[data-theme="dark"] .incident-modal input:focus,
+html[data-theme="dark"] .incident-modal select:focus,
+html[data-theme="dark"] .incident-modal textarea:focus { border-color: #6ca987; }
+html[data-theme="dark"] .notification-item:hover { background: #23332a; }
+html[data-theme="dark"] .notification-item strong { color: #e2ebe5; }
+html[data-theme="dark"] .notification-item small { color: #9aa9a0; }
+html[data-theme="dark"] .recommendations-clear { border-color: #2b3931; color: #a9cbb4; }
+html[data-theme="dark"] .toast > span { color: #c1d0c6; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+}

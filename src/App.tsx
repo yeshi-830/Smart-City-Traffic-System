@@ -2,14 +2,16 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Activity, AlertTriangle, ArrowDownRight, ArrowRight, ArrowUpRight, Bell,
   CarFront, Check, ChevronDown, CircleHelp, Clock3, CloudSun, Construction,
-  Crosshair, Gauge, MapPin, Menu, Plus, RefreshCw, Search, ShieldCheck,
-  Signal, Siren, SlidersHorizontal, Sparkles, TrendingUp, X, Zap,
+  Crosshair, Gauge, MapPin, Menu, Moon, Plus, RefreshCw, Search, ShieldCheck,
+  Signal, Siren, SlidersHorizontal, Sparkles, Sun, TrendingUp, X, Zap,
 } from "lucide-react";
 import CityMap from "./components/CityMap";
 import TrafficChart from "./components/TrafficChart";
 import type { DashboardData, Incident, IncidentSeverity, IncidentStatus, Intersection, TrafficRecommendation } from "./types";
 
 const severityOptions: IncidentSeverity[] = ["low", "medium", "high", "critical"];
+type Theme = "light" | "dark";
+type Panel = "help" | "notifications" | null;
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
@@ -35,6 +37,11 @@ function metricLabel(congestion: Intersection["congestion"]): string {
 }
 
 export default function App() {
+  const [theme, setTheme] = useState<Theme>(() => {
+    const savedTheme = window.localStorage.getItem("flowcity-theme");
+    if (savedTheme === "light" || savedTheme === "dark") return savedTheme;
+    return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  });
   const [dashboard, setDashboard] = useState<DashboardData | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -50,6 +57,27 @@ export default function App() {
   const [notice, setNotice] = useState("");
   const [noticeError, setNoticeError] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [openPanel, setOpenPanel] = useState<Panel>(null);
+  const [incidentSeverity, setIncidentSeverity] = useState<"all" | IncidentSeverity>("all");
+  const [chartRange, setChartRange] = useState<6 | 12>(12);
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    document.documentElement.style.colorScheme = theme;
+    window.localStorage.setItem("flowcity-theme", theme);
+  }, [theme]);
+
+  useEffect(() => {
+    if (!showIncidentForm && !openPanel) return;
+    function handleEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setShowIncidentForm(false);
+        setOpenPanel(null);
+      }
+    }
+    window.addEventListener("keydown", handleEscape);
+    return () => window.removeEventListener("keydown", handleEscape);
+  }, [openPanel, showIncidentForm]);
 
   const refresh = useCallback(async (quiet = false) => {
     if (quiet) setRefreshing(true);
@@ -102,6 +130,14 @@ export default function App() {
   }
 
   const selected = dashboard?.intersections.find((item) => item.id === selectedId) ?? null;
+  const activeIncidents = dashboard?.incidents.filter((item) => item.status !== "resolved") ?? [];
+  const visibleIncidents = activeIncidents.filter((item) =>
+    incidentSeverity === "all" || item.severity === incidentSeverity,
+  );
+  const visibleTrend = (dashboard?.trend ?? []).slice(-chartRange);
+  const averageTrend = visibleTrend.length
+    ? Math.round(visibleTrend.reduce((total, point) => total + point.volume, 0) / visibleTrend.length)
+    : null;
   const filtered = useMemo(() => {
     if (!dashboard) return [];
     const needle = search.trim().toLowerCase();
@@ -109,6 +145,17 @@ export default function App() {
       !needle || `${item.name} ${item.district}`.toLowerCase().includes(needle),
     );
   }, [dashboard, search]);
+
+  function focusIncident(incident: Incident) {
+    setOpenPanel(null);
+    setIncidentSeverity("all");
+    setFocusedIncidentId(String(incident.id));
+    window.setTimeout(() => {
+      const row = document.getElementById(`incident-${incident.id}`);
+      row?.scrollIntoView({ behavior: "smooth", block: "center" });
+      row?.focus();
+    }, 40);
+  }
 
   async function changeSignalMode(intersection: Intersection) {
     try {
@@ -161,6 +208,7 @@ export default function App() {
 
   function openRecommendation(recommendation: TrafficRecommendation) {
     if (recommendation.kind === "incident") {
+      setIncidentSeverity("all");
       setFocusedIncidentId(recommendation.targetId);
       document.getElementById("incidents")?.scrollIntoView({ behavior: "smooth", block: "center" });
       window.setTimeout(() => {
@@ -208,9 +256,9 @@ export default function App() {
             <div className="system-subline"><span>Traffic readings</span><span className="data-source">SIMULATED</span></div>
           </div>
           <div className="user-profile">
-            <div className="user-avatar">JD</div>
-            <div className="user-copy"><strong>Jordan Davis</strong><span>Traffic operator</span></div>
-            <button className="icon-button help-button" aria-label="Help"><CircleHelp size={16} /></button>
+            <div className="user-avatar">MY</div>
+            <div className="user-copy"><strong>Mihiretu Yeshi</strong><span>Traffic operator</span></div>
+            <button className="icon-button help-button" aria-label="Help" onClick={() => setOpenPanel("help")}><CircleHelp size={16} /></button>
           </div>
         </div>
       </aside>
@@ -225,8 +273,20 @@ export default function App() {
             <div className="weather-chip" title="Sample weather — not a live forecast"><CloudSun size={16} /><strong>72°</strong><span>Sample conditions</span><i /></div>
             <div className="topbar-divider" />
             <span className="clock"><Clock3 size={14} />{timeDisplay}</span>
-            <button className="icon-button notification-button" aria-label="Notifications"><Bell size={17} /><span /></button>
-            <div className="topbar-avatar">JD</div>
+            <button
+              className="icon-button theme-toggle"
+              aria-label={`Switch to ${theme === "light" ? "dark" : "light"} mode`}
+              title={`Switch to ${theme === "light" ? "dark" : "light"} mode`}
+              onClick={() => setTheme(theme === "light" ? "dark" : "light")}
+            >{theme === "light" ? <Moon size={17} /> : <Sun size={17} />}</button>
+            <button
+              className="icon-button notification-button"
+              aria-label={`Notifications, ${activeIncidents.length} active incidents`}
+              title="View active incident notifications"
+              onClick={() => setOpenPanel(openPanel === "notifications" ? null : "notifications")}
+              aria-haspopup="dialog"
+            ><Bell size={17} />{activeIncidents.length > 0 && <span />}</button>
+            <div className="topbar-avatar">MY</div>
           </div>
         </header>
 
@@ -234,7 +294,7 @@ export default function App() {
           <div className="page-heading">
             <div>
               <div className="heading-kicker"><span className={`live-pulse${liveConnected ? "" : " disconnected"}`} />{liveConnected ? "LIVE SIMULATION" : "RECONNECTING"} <span>·</span> {dateDisplay}</div>
-              <h1>Good {greeting}, Jordan <span className="wave">✳</span></h1>
+              <h1>Good {greeting}, Mihiretu <span className="wave">✳</span></h1>
               <p>Here’s what’s happening across Metro City today.</p>
             </div>
             <div className="heading-actions">
@@ -249,7 +309,7 @@ export default function App() {
 
           <section className="metrics-grid" aria-label="Traffic network summary">
             <article className="metric-card">
-              <div className="metric-top"><span className="metric-icon mint"><Signal size={17} /></span><span className="metric-kicker">NETWORK STATUS</span><button className="metric-more" aria-label="Signal details"><ArrowUpRight size={15} /></button></div>
+              <div className="metric-top"><span className="metric-icon mint"><Signal size={17} /></span><span className="metric-kicker">NETWORK STATUS</span><button className="metric-more" aria-label="View signal details" title="View intersections" onClick={() => document.getElementById("intersections")?.scrollIntoView({ behavior: "smooth", block: "center" })}><ArrowUpRight size={15} /></button></div>
               <div className="metric-value">{loading ? "—" : `${summary?.monitoredIntersections ?? 0}`}<span className="metric-unit">/ 12</span></div>
               <div className="metric-foot"><span className="status-dot" />{summary?.adaptiveSignals ?? 0} adaptive signals active</div>
               <div className="metric-progress"><span style={{ width: `${Math.min(100, (summary?.monitoredIntersections ?? 0) / 12 * 100)}%` }} /></div>
@@ -318,10 +378,17 @@ export default function App() {
               <section className="traffic-card" id="insights">
                 <div className="section-head">
                   <div><span className="eyebrow">NETWORK PERFORMANCE</span><h2>Traffic volume</h2></div>
-                  <button className="select-button">Last 12 hours <ChevronDown size={14} /></button>
+                  <label className="chart-range">
+                    <span className="visually-hidden">Traffic chart time range</span>
+                    <select className="select-button" value={chartRange} onChange={(event) => setChartRange(Number(event.target.value) as 6 | 12)}>
+                      <option value={6}>Last 6 hours</option>
+                      <option value={12}>Last 12 hours</option>
+                    </select>
+                    <ChevronDown size={14} aria-hidden="true" />
+                  </label>
                 </div>
-                <div className="chart-summary"><span className="chart-value">{dashboard?.trend.length ? Math.round(dashboard.trend.reduce((total, point) => total + point.volume, 0) / dashboard.trend.length) : "—"}<span>%</span></span><span className="chart-summary-label">avg. modeled road capacity</span></div>
-                <TrafficChart data={dashboard?.trend ?? []} />
+                <div className="chart-summary"><span className="chart-value">{averageTrend ?? "—"}<span>%</span></span><span className="chart-summary-label">avg. modeled road capacity</span></div>
+                <TrafficChart data={visibleTrend} />
                 <div className="chart-foot"><span><i className="chart-key" />Modeled road capacity</span><span>Hourly average · Simulated data</span></div>
               </section>
             </div>
@@ -330,13 +397,26 @@ export default function App() {
               <section className="incidents-card" id="incidents">
                 <div className="section-head incidents-heading">
                   <div><span className="eyebrow">RESPONSE QUEUE</span><h2>Active incidents <span className="heading-count">{summary?.activeIncidents ?? 0}</span></h2></div>
-                  <button className="icon-button" aria-label="Incident filters"><SlidersHorizontal size={16} /></button>
+                  <label className="incident-filter" title="Filter incidents by severity">
+                    <SlidersHorizontal size={15} aria-hidden="true" />
+                    <select value={incidentSeverity} onChange={(event) => setIncidentSeverity(event.target.value as "all" | IncidentSeverity)} aria-label="Filter incidents by severity">
+                      <option value="all">All severities</option>
+                      {[...severityOptions].reverse().map((severity) => <option key={severity} value={severity}>{severity[0].toUpperCase() + severity.slice(1)}</option>)}
+                    </select>
+                    <ChevronDown size={12} aria-hidden="true" />
+                  </label>
                 </div>
                 <div className="incident-list">
-                  {(dashboard?.incidents ?? []).filter((item) => item.status !== "resolved").map((incident) => (
+                  {visibleIncidents.map((incident) => (
                     <IncidentRow key={incident.id} incident={incident} recommended={focusedIncidentId === String(incident.id)} onAdvance={() => void changeIncidentStatus(incident, incident.status === "open" ? "investigating" : "resolved")} />
                   ))}
-                  {!loading && (dashboard?.incidents.filter((item) => item.status !== "resolved").length ?? 0) === 0 && <div className="empty-incidents"><ShieldCheck size={24} /><strong>All clear</strong><span>No active incidents in the response queue.</span></div>}
+                  {!loading && visibleIncidents.length === 0 && (
+                    <div className="empty-incidents">
+                      {activeIncidents.length === 0 ? <ShieldCheck size={24} /> : <SlidersHorizontal size={22} />}
+                      <strong>{activeIncidents.length === 0 ? "All clear" : "No matching incidents"}</strong>
+                      <span>{activeIncidents.length === 0 ? "No active incidents in the response queue." : "Try selecting another severity."}</span>
+                    </div>
+                  )}
                 </div>
                 <button className="incident-add" onClick={openIncidentForm}><Plus size={15} /> Report a new incident</button>
               </section>
@@ -375,7 +455,7 @@ export default function App() {
             </div>
           </div>
 
-          <footer className="dashboard-footer"><span>© 2026 FlowCity Operations</span><span><span className="footer-online-dot" />All systems operational</span><span>Traffic readings are simulated · Connect real sensors to go live</span><button className="footer-help"><CircleHelp size={13} />Need help?</button></footer>
+          <footer className="dashboard-footer"><span>© 2026 FlowCity Operations</span><span><span className="footer-online-dot" />All systems operational</span><span>Traffic readings are simulated · Connect real sensors to go live</span><button className="footer-help" onClick={() => setOpenPanel("help")}><CircleHelp size={13} />Need help?</button></footer>
         </div>
       </main>
 
@@ -390,6 +470,39 @@ export default function App() {
               <label>Description <span className="optional-label">Optional</span><textarea name="description" rows={3} maxLength={500} placeholder="Share any details that could help responders..." /></label>
               <div className="form-footer"><span><ShieldCheck size={14} />Visible to city operators</span><button className="button button-primary" type="submit" disabled={saving}>{saving ? <RefreshCw size={15} className="spin" /> : <Plus size={15} />}{saving ? "Submitting..." : "Submit report"}</button></div>
             </form>
+          </section>
+        </div>
+      )}
+
+      {openPanel && (
+        <div className="modal-backdrop" role="presentation" onClick={(event) => { if (event.target === event.currentTarget) setOpenPanel(null); }}>
+          <section className="incident-modal info-modal" role="dialog" aria-modal="true" aria-labelledby="info-dialog-title">
+            <div className="modal-heading">
+              <div>
+                <span className="eyebrow">{openPanel === "help" ? "FLOWCITY GUIDE" : "INCIDENT RESPONSE"}</span>
+                <h2 id="info-dialog-title">{openPanel === "help" ? "Dashboard help" : "Active notifications"}</h2>
+                <p>{openPanel === "help" ? "Quick guidance for using the traffic operations dashboard." : `${activeIncidents.length} unresolved ${activeIncidents.length === 1 ? "incident" : "incidents"} need operator review.`}</p>
+              </div>
+              <button className="icon-button" aria-label="Close dialog" onClick={() => setOpenPanel(null)}><X size={18} /></button>
+            </div>
+            {openPanel === "help" ? (
+              <div className="help-content">
+                <p><strong>Monitor traffic:</strong> Select an intersection on the map or in the network list to view its simulated readings and demo signal mode.</p>
+                <p><strong>Manage incidents:</strong> Report an incident, filter the response queue by severity, and advance open incidents through investigation to resolution.</p>
+                <p><strong>Change appearance:</strong> Use the moon/sun button in the header to switch themes. Your choice is saved on this device.</p>
+                <p className="help-disclaimer">Traffic data and signal controls are simulated. No physical traffic signals are controlled.</p>
+              </div>
+            ) : (
+              <div className="notification-list">
+                {activeIncidents.length > 0 ? activeIncidents.map((incident) => (
+                  <button className="notification-item" key={incident.id} onClick={() => focusIncident(incident)}>
+                    <span className={`severity-badge ${incident.severity}`}>{incident.severity}</span>
+                    <span><strong>{incident.type}</strong><small>{incident.location} · {formatTime(incident.reportedAt)}</small></span>
+                    <ArrowRight size={15} />
+                  </button>
+                )) : <div className="empty-incidents"><ShieldCheck size={24} /><strong>All clear</strong><span>No active incidents need review.</span></div>}
+              </div>
+            )}
           </section>
         </div>
       )}

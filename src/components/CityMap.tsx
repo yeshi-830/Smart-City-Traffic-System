@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { memo, useState } from "react";
 import { ArrowUpRight, Layers2, LocateFixed } from "lucide-react";
 import type { Intersection } from "../types";
 
@@ -16,7 +16,7 @@ const streets = [
   "M 30 275 Q 162 235 282 253 T 546 226", "M 46 111 Q 156 143 260 105 T 536 129",
 ];
 
-export default function CityMap({ intersections, onSelect, selectedId }: CityMapProps) {
+function CityMap({ intersections, onSelect, selectedId }: CityMapProps) {
   const [layersEnabled, setLayersEnabled] = useState(true);
   const [north, setNorth] = useState(false);
 
@@ -111,3 +111,5 @@ export default function CityMap({ intersections, onSelect, selectedId }: CityMap
     </section>
   );
 }
+
+export default memo(CityMap);

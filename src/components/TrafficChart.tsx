@@ -1,8 +1,11 @@
+import { memo } from "react";
+
 interface TrafficChartProps {
   data: { time: string; volume: number }[];
+  hours: 6 | 12;
 }
 
-export default function TrafficChart({ data }: TrafficChartProps) {
+function TrafficChart({ data, hours }: TrafficChartProps) {
   if (data.length === 0) return <div className="chart-empty">Traffic history is not available yet.</div>;
 
   const width = 600;
@@ -26,7 +29,7 @@ export default function TrafficChart({ data }: TrafficChartProps) {
 
   return (
     <div className="traffic-chart">
-      <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Simulated vehicle volume over the past 12 hours">
+      <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`Simulated vehicle volume over the past ${hours} hours`}>
         <defs>
           <linearGradient id="chart-fill" x1="0" x2="0" y1="0" y2="1">
             <stop offset="0%" stopColor="#309978" stopOpacity=".18" />
@@ -49,3 +52,5 @@ export default function TrafficChart({ data }: TrafficChartProps) {
     </div>
   );
 }
+
+export default memo(TrafficChart);

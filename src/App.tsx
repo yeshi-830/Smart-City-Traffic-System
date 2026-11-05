@@ -10,6 +10,7 @@ import TrafficChart from "./components/TrafficChart";
 import type { DashboardData, Incident, IncidentSeverity, IncidentStatus, Intersection, TrafficRecommendation } from "./types";
 
 const severityOptions: IncidentSeverity[] = ["low", "medium", "high", "critical"];
+const emptyIntersections: Intersection[] = [];
 type Theme = "light" | "dark";
 type Panel = "help" | "notifications" | null;
 
@@ -130,14 +131,21 @@ export default function App() {
   }
 
   const selected = dashboard?.intersections.find((item) => item.id === selectedId) ?? null;
-  const activeIncidents = dashboard?.incidents.filter((item) => item.status !== "resolved") ?? [];
-  const visibleIncidents = activeIncidents.filter((item) =>
-    incidentSeverity === "all" || item.severity === incidentSeverity,
+  const activeIncidents = useMemo(
+    () => dashboard?.incidents.filter((item) => item.status !== "resolved") ?? [],
+    [dashboard?.incidents],
   );
-  const visibleTrend = (dashboard?.trend ?? []).slice(-chartRange);
-  const averageTrend = visibleTrend.length
+  const visibleIncidents = useMemo(
+    () => activeIncidents.filter((item) => incidentSeverity === "all" || item.severity === incidentSeverity),
+    [activeIncidents, incidentSeverity],
+  );
+  const visibleTrend = useMemo(
+    () => (dashboard?.trend ?? []).slice(-chartRange),
+    [dashboard?.trend, chartRange],
+  );
+  const averageTrend = useMemo(() => visibleTrend.length
     ? Math.round(visibleTrend.reduce((total, point) => total + point.volume, 0) / visibleTrend.length)
-    : null;
+    : null, [visibleTrend]);
   const filtered = useMemo(() => {
     if (!dashboard) return [];
     const needle = search.trim().toLowerCase();
@@ -145,6 +153,10 @@ export default function App() {
       !needle || `${item.name} ${item.district}`.toLowerCase().includes(needle),
     );
   }, [dashboard, search]);
+  const selectIntersection = useCallback((id: string) => {
+    setSelectedId(id);
+    window.setTimeout(() => document.getElementById("intersections")?.scrollIntoView({ behavior: "smooth", block: "center" }), 40);
+  }, []);
 
   function focusIncident(incident: Incident) {
     setOpenPanel(null);
@@ -329,7 +341,7 @@ export default function App() {
             <article className="metric-card">
               <div className="metric-top"><span className="metric-icon violet"><CarFront size={18} /></span><span className="metric-kicker">CONGESTION INDEX</span><span className="metric-trend metric-demo-tag">SIMULATED</span></div>
               <div className="metric-value">{loading ? "—" : summary?.congestionIndex}<span className="metric-unit">/ 100</span></div>
-              <div className="metric-foot">City-wide traffic pressure</div>
+              <div className="metric-foot">City-wide pressure · {summary?.severeCongestion ?? 0} severe intersections</div>
               <div className="metric-progress violet-progress"><span style={{ width: `${summary?.congestionIndex ?? 0}%` }} /></div>
             </article>
           </section>
@@ -368,11 +380,8 @@ export default function App() {
           <div className="content-grid">
             <div className="primary-column">
               <CityMap
-                intersections={dashboard?.intersections ?? []}
-                onSelect={(id) => {
-                  setSelectedId(id);
-                  window.setTimeout(() => document.getElementById("intersections")?.scrollIntoView({ behavior: "smooth", block: "center" }), 40);
-                }}
+                intersections={dashboard?.intersections ?? emptyIntersections}
+                onSelect={selectIntersection}
                 selectedId={selectedId}
               />
               <section className="traffic-card" id="insights">
@@ -388,7 +397,7 @@ export default function App() {
                   </label>
                 </div>
                 <div className="chart-summary"><span className="chart-value">{averageTrend ?? "—"}<span>%</span></span><span className="chart-summary-label">avg. modeled road capacity</span></div>
-                <TrafficChart data={visibleTrend} />
+                <TrafficChart data={visibleTrend} hours={chartRange} />
                 <div className="chart-foot"><span><i className="chart-key" />Modeled road capacity</span><span>Hourly average · Simulated data</span></div>
               </section>
             </div>

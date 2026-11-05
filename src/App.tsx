@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  Activity, AlertTriangle, ArrowDownRight, ArrowRight, ArrowUpRight, Bell,
+  Activity, AlertTriangle, ArrowDownRight, ArrowRight, ArrowUpRight, Bell, Download,
   CarFront, Check, ChevronDown, CircleHelp, Clock3, CloudSun, Construction,
   Crosshair, Gauge, MapPin, Menu, Moon, Plus, RefreshCw, Search, ShieldCheck,
   Signal, Siren, SlidersHorizontal, Sparkles, Sun, TrendingUp, X, Zap,
@@ -13,6 +13,8 @@ const severityOptions: IncidentSeverity[] = ["low", "medium", "high", "critical"
 const emptyIntersections: Intersection[] = [];
 type Theme = "light" | "dark";
 type Panel = "help" | "notifications" | null;
+type IntersectionFilter = "all" | "congested" | "clear";
+type IntersectionSort = "priority" | "speed" | "name";
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
@@ -60,6 +62,8 @@ export default function App() {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [openPanel, setOpenPanel] = useState<Panel>(null);
   const [incidentSeverity, setIncidentSeverity] = useState<"all" | IncidentSeverity>("all");
+  const [intersectionFilter, setIntersectionFilter] = useState<IntersectionFilter>("all");
+  const [intersectionSort, setIntersectionSort] = useState<IntersectionSort>("priority");
   const [chartRange, setChartRange] = useState<6 | 12>(12);
 
   useEffect(() => {
@@ -149,14 +153,66 @@ export default function App() {
   const filtered = useMemo(() => {
     if (!dashboard) return [];
     const needle = search.trim().toLowerCase();
-    return dashboard.intersections.filter((item) =>
-      !needle || `${item.name} ${item.district}`.toLowerCase().includes(needle),
-    );
-  }, [dashboard, search]);
+    const matches = dashboard.intersections.filter((item) => {
+      const matchesSearch = !needle || `${item.name} ${item.district}`.toLowerCase().includes(needle);
+      const matchesTraffic = intersectionFilter === "all"
+        || (intersectionFilter === "congested" && (item.congestion === "Heavy" || item.congestion === "Severe"))
+        || (intersectionFilter === "clear" && (item.congestion === "Clear" || item.congestion === "Moderate"));
+      return matchesSearch && matchesTraffic;
+    });
+    const congestionRank: Record<Intersection["congestion"], number> = {
+      Severe: 0,
+      Heavy: 1,
+      Moderate: 2,
+      Clear: 3,
+    };
+    return matches.sort((left, right) => {
+      if (intersectionSort === "speed") return right.speed - left.speed || left.name.localeCompare(right.name);
+      if (intersectionSort === "name") return left.name.localeCompare(right.name);
+      return congestionRank[left.congestion] - congestionRank[right.congestion]
+        || left.speed - right.speed
+        || left.name.localeCompare(right.name);
+    });
+  }, [dashboard, intersectionFilter, intersectionSort, search]);
   const selectIntersection = useCallback((id: string) => {
     setSelectedId(id);
     window.setTimeout(() => document.getElementById("intersections")?.scrollIntoView({ behavior: "smooth", block: "center" }), 40);
   }, []);
+
+  function exportDashboard() {
+    if (!dashboard) return;
+    const generatedAt = new Date().toISOString();
+    const headers = [
+      "record_type", "generated_at", "id", "name_or_location", "district",
+      "congestion", "speed_mph", "vehicles_per_hour", "signal_mode",
+      "incident_type", "severity", "status", "reported_at", "description",
+    ];
+    const cell = (value: string | number | null) => {
+      const text = value === null ? "" : String(value);
+      const safeText = typeof value === "string" && /^[=+\-@\t\r]/.test(text) ? `'${text}` : text;
+      return `"${safeText.replace(/"/g, '""')}"`;
+    };
+    const rows = [
+      headers,
+      ...dashboard.intersections.map((intersection) => [
+        "intersection", generatedAt, intersection.id, intersection.name, intersection.district,
+        intersection.congestion, intersection.speed, intersection.vehiclesPerHour, intersection.mode,
+        "", "", "", "", "",
+      ]),
+      ...dashboard.incidents.map((incident) => [
+        "incident", generatedAt, incident.id, incident.location, incident.intersectionId ?? "",
+        "", "", "", "", incident.type, incident.severity, incident.status, incident.reportedAt, incident.description,
+      ]),
+    ];
+    const csv = rows.map((row) => row.map(cell).join(",")).join("\r\n");
+    const url = URL.createObjectURL(new Blob([`\uFEFF${csv}`], { type: "text/csv;charset=utf-8" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `flowcity-operations-${generatedAt.slice(0, 10)}.csv`;
+    link.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    announce("Dashboard report downloaded.");
+  }
 
   function focusIncident(incident: Incident) {
     setOpenPanel(null);
@@ -310,6 +366,9 @@ export default function App() {
               <p>Here’s what’s happening across Metro City today.</p>
             </div>
             <div className="heading-actions">
+              <button className="button button-secondary" onClick={exportDashboard} disabled={!dashboard}>
+                <Download size={15} />Export report
+              </button>
               <button className={`button button-secondary${refreshing ? " is-loading" : ""}`} onClick={() => void refresh(true)} disabled={refreshing}>
                 <RefreshCw size={15} className={refreshing ? "spin" : ""} />Refresh
               </button>
@@ -435,6 +494,26 @@ export default function App() {
                   <div><span className="eyebrow">MONITORED NETWORK</span><h2>Intersections</h2></div>
                   <span className="online-badge"><i /> ONLINE</span>
                 </div>
+                <div className="intersection-controls">
+                  <label className="network-filter">
+                    <span className="visually-hidden">Filter intersections by congestion</span>
+                    <select value={intersectionFilter} onChange={(event) => setIntersectionFilter(event.target.value as IntersectionFilter)}>
+                      <option value="all">All traffic</option>
+                      <option value="congested">Needs attention</option>
+                      <option value="clear">Clear / moderate</option>
+                    </select>
+                    <ChevronDown size={13} aria-hidden="true" />
+                  </label>
+                  <label className="network-filter">
+                    <span className="visually-hidden">Sort intersections</span>
+                    <select value={intersectionSort} onChange={(event) => setIntersectionSort(event.target.value as IntersectionSort)}>
+                      <option value="priority">Priority</option>
+                      <option value="speed">Highest speed</option>
+                      <option value="name">Name</option>
+                    </select>
+                    <ChevronDown size={13} aria-hidden="true" />
+                  </label>
+                </div>
                 <label className="search-field"><Search size={15} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Find an intersection..." aria-label="Search intersections" />{search && <button aria-label="Clear search" onClick={() => setSearch("")}><X size={14} /></button>}</label>
                 <div className="intersection-list">
                   {filtered.map((intersection) => (
@@ -449,7 +528,7 @@ export default function App() {
                       <span className={`congestion-label ${metricLabel(intersection.congestion)}`}>{intersection.congestion}</span>
                     </button>
                   ))}
-                  {!loading && filtered.length === 0 && <div className="search-empty">No intersections match “{search}”.</div>}
+                  {!loading && filtered.length === 0 && <div className="search-empty">No intersections match the current search and filters.</div>}
                 </div>
                 {selected && (
                   <div className="intersection-detail">
@@ -459,7 +538,7 @@ export default function App() {
                     <span className="operator-note"><ShieldCheck size={12} />Demo only — no physical signal is controlled</span>
                   </div>
                 )}
-                <div className="intersection-footer"><span>{filtered.length} monitored intersections</span><span className="sim-note"><Activity size={12} /> Simulation</span></div>
+                <div className="intersection-footer"><span>Showing {filtered.length} of {dashboard?.intersections.length ?? 0}</span><span className="sim-note"><Activity size={12} /> Simulation</span></div>
               </section>
             </div>
           </div>

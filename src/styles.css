@@ -229,6 +229,11 @@ h1, h2, p { margin: 0; }
 .intersection-heading { margin-bottom: 12px; }
 .online-badge { display: flex; align-items: center; gap: 5px; color: #56906e; font-size: 7px; font-weight: 700; letter-spacing: .55px; }
 .online-badge > i { width: 5px; height: 5px; border-radius: 50%; background: #57aa79; }
+.intersection-controls { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; margin-bottom: 8px; }
+.network-filter { position: relative; min-width: 0; }
+.network-filter select { width: 100%; height: 30px; appearance: none; padding: 0 25px 0 8px; border: 1px solid #e8eeea; border-radius: 6px; outline: 0; background: #fff; color: #78847d; cursor: pointer; font-size: 8px; }
+.network-filter select:focus-visible { outline: 3px solid rgba(48, 151, 119, .35); outline-offset: 2px; }
+.network-filter > svg { position: absolute; top: 8px; right: 7px; pointer-events: none; color: #89958e; }
 .search-field { display: flex; height: 32px; align-items: center; gap: 7px; padding: 0 9px; border: 1px solid #e9eeeb; border-radius: 6px; color: #9ba59f; }
 .search-field:focus-within { border-color: #a4cabb; box-shadow: 0 0 0 2px rgba(66, 142, 108, .08); }
 .search-field input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparent; color: #414e46; font-size: 9px; }
@@ -339,6 +344,8 @@ h1, h2, p { margin: 0; }
   .page-heading { align-items: flex-start; flex-direction: column; gap: 14px; }
   .page-heading h1 { font-size: 25px; }
   .heading-actions { width: 100%; }
+  .heading-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .heading-actions .button-primary { grid-column: 1 / -1; }
   .heading-actions .button-primary { flex: 1; }
   .metric-card { min-height: 117px; }
   .recommendations-card { margin-block: 12px; padding-inline: 13px; }
@@ -446,6 +453,7 @@ html[data-theme="dark"] .workspace-picker,
 html[data-theme="dark"] .search-field,
 html[data-theme="dark"] .incident-filter,
 html[data-theme="dark"] .select-button,
+html[data-theme="dark"] .network-filter select,
 html[data-theme="dark"] .button-secondary,
 html[data-theme="dark"] .recommendation-action,
 html[data-theme="dark"] .optimize-button,
@@ -456,6 +464,7 @@ html[data-theme="dark"] .recommendation-action:hover,
 html[data-theme="dark"] .optimize-button:hover,
 html[data-theme="dark"] .incident-add:hover { background: #293a30; }
 html[data-theme="dark"] .search-field input,
+html[data-theme="dark"] .network-filter select,
 html[data-theme="dark"] .incident-filter select { color: #e2ebe5; }
 html[data-theme="dark"] .search-field input::placeholder { color: #84948a; }
 html[data-theme="dark"] .chart-grid-line,

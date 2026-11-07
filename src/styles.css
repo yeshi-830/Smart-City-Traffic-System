@@ -16,6 +16,7 @@
 }
 
 * { box-sizing: border-box; }
+html { scroll-padding-top: 78px; }
 body { margin: 0; min-width: 320px; min-height: 100vh; }
 button, input, select, textarea { font: inherit; }
 button { color: inherit; }
@@ -57,6 +58,7 @@ button:disabled { cursor: wait; opacity: .72; }
 .user-avatar, .topbar-avatar { width: 31px; height: 31px; border-radius: 50%; background: #e9e6df; color: #745f4f; font-size: 10px; }
 .help-button { width: 27px !important; height: 27px !important; color: #99a39e !important; }
 .main-content { min-height: 100vh; margin-left: 238px; }
+#overview, #incidents, #intersections, #insights { scroll-margin-top: 78px; }
 .topbar { position: sticky; top: 0; z-index: 5; display: flex; height: 62px; align-items: center; justify-content: space-between; padding: 0 39px; border-bottom: 1px solid #e9eeeb; background: rgba(255, 255, 255, .94); backdrop-filter: blur(12px); }
 .breadcrumbs { display: flex; align-items: center; gap: 10px; color: #9aa39f; font-size: 10px; }
 .breadcrumbs strong { color: #46524b; font-weight: 600; }
@@ -357,6 +359,8 @@ h1, h2, p { margin: 0; }
   .recommendation-action { margin-left: 41px; }
   .dashboard-footer { flex-wrap: wrap; gap: 8px 14px; padding-block: 10px; }
   .dashboard-footer > span:nth-child(3) { order: 5; width: 100%; }
+  .incident-action, .incident-add, .optimize-button, .recommendation-action { min-height: 40px; }
+  .chart-range .select-button, .incident-filter { min-height: 36px; }
 }
 @media (max-width: 390px) {
   .dashboard { padding-inline: 11px; }

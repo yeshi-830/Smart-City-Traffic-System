@@ -15,6 +15,7 @@ type Theme = "light" | "dark";
 type Panel = "help" | "notifications" | null;
 type IntersectionFilter = "all" | "congested" | "clear";
 type IntersectionSort = "priority" | "speed" | "name";
+type DashboardSection = "overview" | "intersections" | "incidents" | "insights";
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
@@ -71,6 +72,8 @@ export default function App() {
   const [intersectionFilter, setIntersectionFilter] = useState<IntersectionFilter>("all");
   const [intersectionSort, setIntersectionSort] = useState<IntersectionSort>("priority");
   const [chartRange, setChartRange] = useState<6 | 12>(12);
+  const [activeSection, setActiveSection] = useState<DashboardSection>("overview");
+  const [now, setNow] = useState(() => new Date());
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -89,6 +92,31 @@ export default function App() {
     window.addEventListener("keydown", handleEscape);
     return () => window.removeEventListener("keydown", handleEscape);
   }, [openPanel, showIncidentForm]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(new Date()), 30_000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    const sectionIds: DashboardSection[] = ["intersections", "incidents", "insights"];
+    const sections = sectionIds
+      .map((id) => document.getElementById(id))
+      .filter((section): section is HTMLElement => section !== null);
+    if (sections.length === 0) return;
+
+    const observer = new IntersectionObserver((entries) => {
+      const current = entries
+        .filter((entry) => entry.isIntersecting)
+        .sort((left, right) => left.boundingClientRect.top - right.boundingClientRect.top)[0];
+      const section = current && sectionIds.find((id) => id === current.target.id);
+      if (section) setActiveSection(section);
+      else if (window.scrollY < 240) setActiveSection("overview");
+    }, { rootMargin: "-80px 0px -65% 0px" });
+
+    sections.forEach((section) => observer.observe(section));
+    return () => observer.disconnect();
+  }, []);
 
   const refresh = useCallback(async (quiet = false) => {
     if (quiet) setRefreshing(true);
@@ -298,7 +326,6 @@ export default function App() {
   }
 
   const summary = dashboard?.summary;
-  const now = new Date();
   const timeDisplay = now.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
   const greeting = now.getHours() < 12 ? "morning" : now.getHours() < 17 ? "afternoon" : "evening";
   const dateDisplay = now.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" }).toUpperCase();
@@ -318,10 +345,10 @@ export default function App() {
         </div>
         <div className="nav-caption">WORKSPACE</div>
         <nav className="primary-nav" aria-label="Main navigation">
-          <a href="#overview" className="nav-link active" onClick={() => setMobileNavOpen(false)}><Crosshair size={17} />Overview<span className="nav-current-dot" /></a>
-          <a href="#intersections" className="nav-link" onClick={() => setMobileNavOpen(false)}><MapPin size={17} />Intersections</a>
-          <a href="#incidents" className="nav-link" onClick={() => setMobileNavOpen(false)}><Siren size={17} />Incident response{summary?.activeIncidents ? <span className="nav-count">{summary.activeIncidents}</span> : null}</a>
-          <a href="#insights" className="nav-link" onClick={() => setMobileNavOpen(false)}><TrendingUp size={17} />Traffic insights</a>
+          <a href="#overview" className={`nav-link${activeSection === "overview" ? " active" : ""}`} aria-current={activeSection === "overview" ? "page" : undefined} onClick={() => { setActiveSection("overview"); setMobileNavOpen(false); }}><Crosshair size={17} />Overview{activeSection === "overview" && <span className="nav-current-dot" />}</a>
+          <a href="#intersections" className={`nav-link${activeSection === "intersections" ? " active" : ""}`} aria-current={activeSection === "intersections" ? "location" : undefined} onClick={() => { setActiveSection("intersections"); setMobileNavOpen(false); }}><MapPin size={17} />Intersections{activeSection === "intersections" && <span className="nav-current-dot" />}</a>
+          <a href="#incidents" className={`nav-link${activeSection === "incidents" ? " active" : ""}`} aria-current={activeSection === "incidents" ? "location" : undefined} onClick={() => { setActiveSection("incidents"); setMobileNavOpen(false); }}><Siren size={17} />Incident response{summary?.activeIncidents ? <span className="nav-count">{summary.activeIncidents}</span> : null}{activeSection === "incidents" && !summary?.activeIncidents && <span className="nav-current-dot" />}</a>
+          <a href="#insights" className={`nav-link${activeSection === "insights" ? " active" : ""}`} aria-current={activeSection === "insights" ? "location" : undefined} onClick={() => { setActiveSection("insights"); setMobileNavOpen(false); }}><TrendingUp size={17} />Traffic insights{activeSection === "insights" && <span className="nav-current-dot" />}</a>
         </nav>
         <div className="sidebar-bottom">
           <div className="system-card">
@@ -346,7 +373,7 @@ export default function App() {
           <div className="topbar-right">
             <div className="weather-chip" title="Sample weather — not a live forecast"><CloudSun size={16} /><strong>72°</strong><span>Sample conditions</span><i /></div>
             <div className="topbar-divider" />
-            <span className="clock"><Clock3 size={14} />{timeDisplay}</span>
+            <time className="clock" dateTime={now.toISOString()}><Clock3 size={14} />{timeDisplay}</time>
             <button
               className="icon-button theme-toggle"
               aria-label={`Switch to ${theme === "light" ? "dark" : "light"} mode`}

@@ -39,6 +39,12 @@ function metricLabel(congestion: Intersection["congestion"]): string {
   return congestion.toLowerCase();
 }
 
+function sameDashboardContent(left: DashboardData, right: DashboardData): boolean {
+  const { updatedAt: _leftUpdatedAt, ...leftContent } = left;
+  const { updatedAt: _rightUpdatedAt, ...rightContent } = right;
+  return JSON.stringify(leftContent) === JSON.stringify(rightContent);
+}
+
 export default function App() {
   const [theme, setTheme] = useState<Theme>(() => {
     const savedTheme = window.localStorage.getItem("flowcity-theme");
@@ -89,7 +95,7 @@ export default function App() {
     else setLoading(true);
     try {
       const data = await api<DashboardData>("/api/dashboard");
-      setDashboard(data);
+      setDashboard((current) => current && sameDashboardContent(current, data) ? current : data);
       setError("");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Unable to load traffic operations data.");
@@ -106,7 +112,7 @@ export default function App() {
     stream.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data) as DashboardData;
-        setDashboard(data);
+        setDashboard((current) => current && sameDashboardContent(current, data) ? current : data);
         setError("");
         setLoading(false);
       } catch (cause) {
@@ -492,7 +498,9 @@ export default function App() {
               <section className="intersection-card" id="intersections">
                 <div className="section-head intersection-heading">
                   <div><span className="eyebrow">MONITORED NETWORK</span><h2>Intersections</h2></div>
-                  <span className="online-badge"><i /> ONLINE</span>
+                  <span className={`online-badge${liveConnected ? "" : " offline"}`} aria-live="polite">
+                    <i />{liveConnected ? "LIVE" : "RECONNECTING"}
+                  </span>
                 </div>
                 <div className="intersection-controls">
                   <label className="network-filter">
@@ -543,7 +551,7 @@ export default function App() {
             </div>
           </div>
 
-          <footer className="dashboard-footer"><span>© 2026 FlowCity Operations</span><span><span className="footer-online-dot" />All systems operational</span><span>Traffic readings are simulated · Connect real sensors to go live</span><button className="footer-help" onClick={() => setOpenPanel("help")}><CircleHelp size={13} />Need help?</button></footer>
+          <footer className="dashboard-footer"><span>© 2026 FlowCity Operations</span><span><span className={`footer-online-dot${liveConnected && !error ? "" : " status-offline"}`} />{error ? "API unavailable" : liveConnected ? "Live feed connected" : "Live feed reconnecting"}</span><span>Traffic readings are simulated · Connect real sensors to go live</span><button className="footer-help" onClick={() => setOpenPanel("help")}><CircleHelp size={13} />Need help?</button></footer>
         </div>
       </main>
 

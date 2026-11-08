@@ -491,6 +491,30 @@ export default function App() {
                 <div className="chart-summary"><span className="chart-value">{averageTrend ?? "—"}<span>%</span></span><span className="chart-summary-label">avg. modeled road capacity</span></div>
                 <TrafficChart data={visibleTrend} hours={chartRange} />
                 <div className="chart-foot"><span><i className="chart-key" />Modeled road capacity</span><span>Hourly average · Simulated data</span></div>
+                <div className="forecast-panel" aria-live="polite">
+                  <div className="forecast-title">
+                    <span className="forecast-icon"><Sparkles size={14} /></span>
+                    <span><strong>Next-hour traffic outlook</strong><small>Linear trend model · simulated readings</small></span>
+                  </div>
+                  {dashboard?.forecast ? (
+                    <>
+                      <div className="forecast-result"><strong>{dashboard.forecast.predictedVolume}%</strong><span>estimated capacity</span></div>
+                      <div className={`forecast-direction ${dashboard.forecast.direction}`}>
+                        {dashboard.forecast.direction === "rising"
+                          ? <ArrowUpRight size={14} />
+                          : dashboard.forecast.direction === "falling"
+                            ? <ArrowDownRight size={14} />
+                            : <Activity size={13} />}
+                        <strong>{dashboard.forecast.change > 0 ? "+" : ""}{dashboard.forecast.change} pts</strong>
+                        <span>{dashboard.forecast.direction}</span>
+                      </div>
+                      <div className="forecast-range"><span>Estimated range</span><strong>{dashboard.forecast.lowerBound}–{dashboard.forecast.upperBound}%</strong></div>
+                    </>
+                  ) : (
+                    <p className="forecast-empty">Not enough traffic readings to estimate a trend.</p>
+                  )}
+                  <p className="forecast-disclaimer">A short-term statistical estimate, not a trained AI model. Review conditions before changing signal plans.</p>
+                </div>
               </section>
             </div>
 

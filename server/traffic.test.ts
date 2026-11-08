@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { Incident, Intersection } from "./database.js";
-import { buildTrafficRecommendations, buildTrafficTrend, getTrafficReading } from "./traffic.js";
+import { buildTrafficForecast, buildTrafficRecommendations, buildTrafficTrend, getTrafficReading } from "./traffic.js";
 
 const intersection: Intersection = {
   id: "j-01",
@@ -30,6 +30,50 @@ test("traffic trend includes 12 hourly points with percentage-based volumes", ()
   assert.equal(trend.length, 12);
   assert.ok(trend.every((point) => point.volume > 0 && point.volume <= 100));
   assert.ok(trend.every((point) => /^\d{1,2}(AM|PM)$/.test(point.time)));
+});
+
+test("traffic forecast projects an upward trend and provides a bounded estimate", () => {
+  const forecast = buildTrafficForecast(
+    [20, 25, 30, 35, 40, 45].map((volume, index) => ({ time: `${index}`, volume })),
+  );
+
+  assert.deepEqual(forecast, {
+    horizonMinutes: 60,
+    predictedVolume: 50,
+    change: 5,
+    lowerBound: 47,
+    upperBound: 53,
+    direction: "rising",
+  });
+});
+
+test("traffic forecast handles declining, flat, and insufficient trends", () => {
+  const declining = buildTrafficForecast(
+    [80, 70, 60, 50].map((volume, index) => ({ time: `${index}`, volume })),
+  );
+  const flat = buildTrafficForecast(
+    [50, 50, 50].map((volume, index) => ({ time: `${index}`, volume })),
+  );
+
+  assert.equal(declining?.direction, "falling");
+  assert.equal(declining?.predictedVolume, 40);
+  assert.equal(flat?.direction, "stable");
+  assert.equal(flat?.predictedVolume, 50);
+  assert.equal(buildTrafficForecast([{ time: "now", volume: 50 }]), null);
+});
+
+test("traffic forecast clamps estimates and range to percentage bounds", () => {
+  const rising = buildTrafficForecast(
+    [90, 95, 100, 100].map((volume, index) => ({ time: `${index}`, volume })),
+  );
+  const falling = buildTrafficForecast(
+    [10, 5, 0, 0].map((volume, index) => ({ time: `${index}`, volume })),
+  );
+
+  assert.equal(rising?.predictedVolume, 100);
+  assert.equal(rising?.upperBound, 100);
+  assert.equal(falling?.predictedVolume, 0);
+  assert.equal(falling?.lowerBound, 0);
 });
 
 test("recommendations prioritize unresolved incidents and provide operator actions", () => {

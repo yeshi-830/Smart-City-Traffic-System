@@ -16,7 +16,7 @@ import {
   type IncidentSeverity,
   type IncidentStatus,
 } from "./database.js";
-import { buildTrafficRecommendations, buildTrafficTrend, getTrafficReading } from "./traffic.js";
+import { buildTrafficForecast, buildTrafficRecommendations, buildTrafficTrend, getTrafficReading } from "./traffic.js";
 
 const app = express();
 const port = Number(process.env.PORT ?? 4000);
@@ -56,6 +56,8 @@ function buildDashboard() {
   const averageSpeed = Math.round(readings.reduce((total, item) => total + item.speed, 0) / readings.length);
   const severeCount = readings.filter((item) => item.congestion === "Severe").length;
 
+  const trend = buildTrafficTrend();
+
   return {
     summary: {
       monitoredIntersections: readings.length,
@@ -68,7 +70,8 @@ function buildDashboard() {
     intersections: readings,
     incidents: incidents.slice(0, 8),
     recommendations: buildTrafficRecommendations(readings, incidents.slice(0, 8)),
-    trend: buildTrafficTrend(),
+    trend,
+    forecast: buildTrafficForecast(trend),
     updatedAt: new Date().toISOString(),
     dataMode: "simulated",
   };

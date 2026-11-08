@@ -21,6 +21,52 @@ export interface TrafficReading {
   waitSeconds: number;
 }
 
+export interface TrafficForecast {
+  horizonMinutes: 60;
+  predictedVolume: number;
+  change: number;
+  lowerBound: number;
+  upperBound: number;
+  direction: "rising" | "falling" | "stable";
+}
+
+export function buildTrafficForecast(
+  trend: { time: string; volume: number }[],
+): TrafficForecast | null {
+  const values = trend.slice(-6).map((point) => point.volume);
+  if (values.length < 3) {
+    return null;
+  }
+
+  const meanX = (values.length - 1) / 2;
+  const meanY = values.reduce((total, value) => total + value, 0) / values.length;
+  const varianceX = values.reduce((total, _value, index) => total + Math.pow(index - meanX, 2), 0);
+  const slope = values.reduce(
+    (total, value, index) => total + (index - meanX) * (value - meanY),
+    0,
+  ) / varianceX;
+  const intercept = meanY - slope * meanX;
+  const latest = values[values.length - 1];
+  const predictedVolume = Math.max(0, Math.min(100, Math.round(intercept + slope * values.length)));
+  const change = predictedVolume - latest;
+  const residualError = Math.sqrt(
+    values.reduce(
+      (total, value, index) => total + Math.pow(value - (intercept + slope * index), 2),
+      0,
+    ) / values.length,
+  );
+  const interval = Math.max(3, Math.round(residualError * 1.28));
+
+  return {
+    horizonMinutes: 60,
+    predictedVolume,
+    change,
+    lowerBound: Math.max(0, predictedVolume - interval),
+    upperBound: Math.min(100, predictedVolume + interval),
+    direction: change > 1 ? "rising" : change < -1 ? "falling" : "stable",
+  };
+}
+
 export function buildTrafficRecommendations(
   intersections: Array<Intersection & TrafficReading>,
   incidents: Incident[],

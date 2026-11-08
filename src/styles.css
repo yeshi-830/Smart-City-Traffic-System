@@ -515,6 +515,55 @@ html[data-theme="dark"] .toast > span { color: #c1d0c6; }
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }
 
+.forecast-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  align-items: center;
+  gap: 12px;
+  margin-top: 13px;
+  padding: 11px 12px 9px;
+  border: 1px solid #e8efeb;
+  border-radius: 8px;
+  background: #fafcfb;
+}
+.forecast-title { display: flex; min-width: 0; align-items: center; gap: 9px; }
+.forecast-icon { display: grid; width: 28px; height: 28px; flex: none; place-items: center; border-radius: 7px; background: #edf4ef; color: #438769; }
+.forecast-title > span:last-child { display: grid; min-width: 0; gap: 3px; }
+.forecast-title strong { color: #46564c; font-size: 9px; font-weight: 700; }
+.forecast-title small { color: #98a39c; font-size: 8px; }
+.forecast-result, .forecast-range { display: grid; gap: 3px; }
+.forecast-result strong { color: #2b3831; font-family: "Manrope", sans-serif; font-size: 18px; font-weight: 700; letter-spacing: -.5px; line-height: 1; }
+.forecast-result span, .forecast-range span { color: #98a39c; font-size: 8px; white-space: nowrap; }
+.forecast-range { padding-left: 12px; border-left: 1px solid #e7ece8; }
+.forecast-range strong { color: #59685f; font-size: 9px; font-weight: 700; }
+.forecast-direction { display: flex; align-items: center; gap: 4px; color: #78877e; }
+.forecast-direction strong { font-size: 9px; }
+.forecast-direction span { color: #98a39c; font-size: 8px; text-transform: capitalize; }
+.forecast-direction.rising { color: #bf7654; }
+.forecast-direction.falling { color: #438b6c; }
+.forecast-empty { grid-column: 2 / -1; color: #87958c; font-size: 9px; }
+.forecast-disclaimer { grid-column: 1 / -1; margin: 0; padding-top: 7px; border-top: 1px solid #e9efeb; color: #9aa49e; font-size: 8px; line-height: 1.5; }
+html[data-theme="dark"] .forecast-panel { border-color: #2b3931; background: #1c2821; }
+html[data-theme="dark"] .forecast-icon { background: #26382c; color: #9bd0ae; }
+html[data-theme="dark"] .forecast-title strong,
+html[data-theme="dark"] .forecast-result strong,
+html[data-theme="dark"] .forecast-range strong { color: #d7e5dc; }
+html[data-theme="dark"] .forecast-title small,
+html[data-theme="dark"] .forecast-result span,
+html[data-theme="dark"] .forecast-range span,
+html[data-theme="dark"] .forecast-direction span,
+html[data-theme="dark"] .forecast-disclaimer { color: #9aa9a0; }
+html[data-theme="dark"] .forecast-range,
+html[data-theme="dark"] .forecast-disclaimer { border-color: #2b3931; }
+
+@media (max-width: 520px) {
+  .forecast-panel { grid-template-columns: minmax(0, 1fr) auto; gap: 10px 12px; }
+  .forecast-result { justify-items: end; }
+  .forecast-range { grid-column: 2; justify-self: end; padding-left: 0; border-left: 0; text-align: right; }
+  .forecast-direction { grid-column: 1; grid-row: 2; }
+  .forecast-disclaimer { grid-row: 3; }
+}
+
 /* ==========================================
    FLOWCITY RESPONSIVE LAYOUT IMPROVEMENTS
    Desktop, tablet, and mobile
@@ -900,4 +949,3 @@ svg {
     margin-left: auto;
   }
 }
-

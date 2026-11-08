@@ -514,3 +514,390 @@ html[data-theme="dark"] .toast > span { color: #c1d0c6; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }
+
+/* ==========================================
+   FLOWCITY RESPONSIVE LAYOUT IMPROVEMENTS
+   Desktop, tablet, and mobile
+========================================== */
+
+/* Prevent accidental horizontal overflow */
+html,
+body,
+#root {
+  width: 100%;
+  max-width: 100%;
+}
+
+body {
+  overflow-x: clip;
+}
+
+.app-shell,
+.main-content,
+.dashboard,
+.primary-column,
+.side-column {
+  min-width: 0;
+}
+
+img,
+svg {
+  max-width: 100%;
+}
+
+/* Tablet and smaller laptop screens */
+@media (max-width: 1000px) {
+  .content-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .primary-column,
+  .side-column {
+    width: 100%;
+  }
+
+  .metrics-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .dashboard {
+    padding-inline: 20px;
+  }
+
+  .metric-card {
+    min-width: 0;
+  }
+
+  .metric-foot {
+    white-space: normal;
+    line-height: 1.4;
+  }
+
+  .recommendation-copy {
+    min-width: 0;
+  }
+
+  .recommendation-copy > div {
+    flex-wrap: wrap;
+  }
+
+  .recommendation-copy strong {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+}
+
+/* Mobile devices */
+@media (max-width: 720px) {
+  .main-content {
+    margin-left: 0;
+    width: 100%;
+  }
+
+  .topbar {
+    width: 100%;
+    padding-inline: 12px;
+  }
+
+  .topbar-right {
+    gap: 8px;
+  }
+
+  .dashboard {
+    width: 100%;
+    padding: 20px 12px 12px;
+  }
+
+  .page-heading {
+    align-items: stretch;
+    gap: 12px;
+  }
+
+  .page-heading h1 {
+    font-size: clamp(21px, 6vw, 26px);
+    line-height: 1.25;
+    overflow-wrap: anywhere;
+  }
+
+  .page-heading p {
+    font-size: 12px;
+    line-height: 1.5;
+  }
+
+  .heading-actions {
+    display: flex;
+    flex-wrap: wrap;
+  }
+
+  .heading-actions .button {
+    flex: 1 1 140px;
+    min-height: 40px;
+  }
+
+  .heading-actions .button-primary {
+    flex: 1 1 100%;
+  }
+
+  .metrics-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .metric-card {
+    min-height: 125px;
+    padding: 12px;
+  }
+
+  .metric-top {
+    flex-wrap: wrap;
+    height: auto;
+    min-height: 25px;
+  }
+
+  .metric-kicker {
+    font-size: 8px;
+    letter-spacing: 0.5px;
+  }
+
+  .metric-value {
+    font-size: 25px;
+  }
+
+  .metric-foot {
+    font-size: 9px;
+    white-space: normal;
+  }
+
+  .recommendations-card {
+    padding: 14px 12px;
+  }
+
+  .recommendations-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .recommendations-note {
+    font-size: 9px;
+  }
+
+  .recommendation-item {
+    align-items: flex-start;
+    flex-wrap: wrap;
+    padding-block: 12px;
+  }
+
+  .recommendation-copy {
+    flex: 1 1 calc(100% - 45px);
+    width: auto;
+  }
+
+  .recommendation-copy strong {
+    white-space: normal;
+  }
+
+  .recommendation-action {
+    margin-left: 40px;
+    min-height: 40px;
+  }
+
+  .map-card,
+  .traffic-card,
+  .incidents-card,
+  .intersection-card {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .map-card {
+    padding-inline: 10px;
+  }
+
+  .city-map {
+    width: 100%;
+  }
+
+  .city-map svg {
+    width: 100%;
+    height: auto;
+  }
+
+  .section-head {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .incidents-heading {
+    align-items: center;
+  }
+
+  .incident-filter select {
+    max-width: 110px;
+  }
+
+  .incident-row {
+    gap: 8px;
+  }
+
+  .incident-copy {
+    min-width: 0;
+  }
+
+  .incident-copy > strong {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .intersection-row {
+    gap: 7px;
+  }
+
+  .intersection-name {
+    min-width: 0;
+  }
+
+  .intersection-name > strong {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .congestion-label {
+    min-width: 0;
+  }
+
+  .dashboard-footer {
+    align-items: flex-start;
+    flex-wrap: wrap;
+    line-height: 1.5;
+  }
+
+  .dashboard-footer > span {
+    max-width: 100%;
+  }
+
+  .incident-modal {
+    width: 100%;
+    max-width: 440px;
+    max-height: calc(100dvh - 24px);
+    overflow-y: auto;
+  }
+
+  .modal-backdrop {
+    padding: 12px;
+  }
+
+  .form-footer {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+}
+
+/* Small phones */
+@media (max-width: 420px) {
+  .dashboard {
+    padding-inline: 10px;
+  }
+
+  .topbar {
+    padding-inline: 8px;
+  }
+
+  .breadcrumbs {
+    gap: 5px;
+    font-size: 9px;
+  }
+
+  .metrics-grid {
+    gap: 8px;
+  }
+
+  .metric-card {
+    padding: 10px;
+  }
+
+  .metric-icon {
+    width: 23px;
+    height: 23px;
+  }
+
+  .metric-kicker {
+    font-size: 7px;
+  }
+
+  .metric-value {
+    font-size: 23px;
+  }
+
+  .metric-unit {
+    font-size: 9px;
+  }
+
+  .metric-trend {
+    white-space: normal;
+  }
+
+  .chart-summary {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .chart-summary-label {
+    font-size: 9px;
+  }
+
+  .chart-foot {
+    flex-wrap: wrap;
+    gap: 6px;
+    line-height: 1.5;
+  }
+
+  .intersection-controls {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .intersection-row {
+    min-height: 55px;
+  }
+
+  .intersection-speed {
+    flex-shrink: 0;
+  }
+
+  .congestion-label {
+    font-size: 7px;
+    padding: 4px;
+  }
+
+  .incident-modal {
+    padding: 15px;
+  }
+
+  .detail-stats {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+/* Extra narrow screens */
+@media (max-width: 350px) {
+  .metrics-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .metric-card {
+    min-height: 115px;
+  }
+
+  .topbar-right .clock {
+    display: none;
+  }
+
+  .incident-row {
+    flex-wrap: wrap;
+    padding-block: 10px;
+  }
+
+  .incident-controls {
+    margin-left: auto;
+  }
+}
+

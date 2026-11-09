@@ -195,11 +195,17 @@ button { cursor: pointer; }
 .search-box span { font-size: 18px; }
 .search-box input { width: 100%; min-width: 0; border: 0; outline: 0; color: #42526b; background: transparent; font-size: 9px; }
 .search-box input::placeholder { color: #a8b1bf; }
-.filter-box { display: flex; align-items: center; gap: 7px; color: #929eaf; font-size: 9px; }
-.filter-box select { padding: 6px 21px 6px 8px; border: 1px solid #e8ecf2; border-radius: 6px; outline: 0; color: #5b6b83; background: #fff; font-size: 9px; }
+.filter-controls { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 7px; }
+.filter-box { display: flex; align-items: center; gap: 6px; color: #929eaf; font-size: 9px; }
+.filter-box select { max-width: 135px; padding: 6px 21px 6px 8px; border: 1px solid #e8ecf2; border-radius: 6px; outline: 0; color: #5b6b83; background: #fff; font-size: 9px; }
+.clear-filters { padding: 6px 4px; border: 0; color: #5681df; background: transparent; font-size: 9px; font-weight: 650; }
+.clear-filters:hover { color: #2459c5; }
 .table-wrap { width: 100%; overflow-x: auto; }
 table { width: 100%; border-collapse: collapse; text-align: left; }
 th { padding: 9px 8px; color: #a0aaba; background: #fafbfd; font-size: 8px; font-weight: 700; letter-spacing: .45px; white-space: nowrap; }
+.sort-button { display: inline-flex; align-items: center; gap: 6px; padding: 0; border: 0; color: inherit; background: transparent; font-size: inherit; font-weight: inherit; letter-spacing: inherit; white-space: inherit; }
+.sort-button span { color: #8290a5; font-size: 8px; }
+.sort-button:hover { color: #5681df; }
 td { padding: 10px 8px; border-bottom: 1px solid #f0f2f6; color: #66758b; font-size: 9px; white-space: nowrap; }
 td strong { display: block; color: #40516b; font-size: 9px; font-weight: 650; }
 .cell-subtitle { display: block; margin-top: 3px; color: #a0aaba; font-size: 8px; }
@@ -287,7 +293,9 @@ td strong { display: block; color: #40516b; font-size: 9px; font-weight: 650; }
   .welcome-row { flex-direction: column; }
   .date-card { align-self: flex-start; }
   .trend-panel, .area-panel, .traffic-panel, .signals-panel, .roads-panel { padding-right: 12px; padding-left: 12px; }
-  .table-tools { align-items: flex-start; flex-direction: column; }
-  .filter-box { align-self: flex-end; }
+  .table-tools { align-items: stretch; flex-direction: column; }
+  .search-box { width: 100%; }
+  .filter-controls { justify-content: flex-start; }
+  .filter-box { flex-wrap: wrap; }
   .period-tabs button { padding-right: 6px; padding-left: 6px; }
 }

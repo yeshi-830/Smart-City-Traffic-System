@@ -34,17 +34,38 @@ function App() {
   const [activePage, setActivePage] = useState('overview')
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState('All')
+  const [areaFilter, setAreaFilter] = useState('All')
+  const [signalFilter, setSignalFilter] = useState('All')
+  const [sortConfig, setSortConfig] = useState(null)
   const [roads] = useState(initialRoads)
   const [lastUpdated, setLastUpdated] = useState(new Date())
   const [notice, setNotice] = useState('')
   const [mobileMenu, setMobileMenu] = useState(false)
   const [period, setPeriod] = useState('Week')
 
-  const filteredRoads = useMemo(() => roads.filter((road) => {
+  const areaOptions = useMemo(() => [...new Set(roads.map((road) => road.area))].sort(), [roads])
+  const filteredRoads = useMemo(() => {
     const query = search.trim().toLowerCase()
-    const matchesSearch = road.name.toLowerCase().includes(query) || road.area.toLowerCase().includes(query)
-    return matchesSearch && (filter === 'All' || road.level === filter)
-  }), [roads, search, filter])
+    const matches = roads.filter((road) => {
+      const matchesSearch = road.name.toLowerCase().includes(query) || road.area.toLowerCase().includes(query)
+      return matchesSearch
+        && (filter === 'All' || road.level === filter)
+        && (areaFilter === 'All' || road.area === areaFilter)
+        && (signalFilter === 'All' || road.signal === signalFilter)
+    })
+
+    if (!sortConfig) return matches
+
+    const { key, direction } = sortConfig
+    return matches.sort((a, b) => {
+      const left = a[key]
+      const right = b[key]
+      const comparison = typeof left === 'number'
+        ? left - right
+        : String(left).localeCompare(String(right), undefined, { numeric: true, sensitivity: 'base' })
+      return comparison * (direction === 'asc' ? 1 : -1)
+    })
+  }, [roads, search, filter, areaFilter, signalFilter, sortConfig])
 
   const totalVehicles = roads.reduce((sum, road) => sum + road.vehicles, 0)
   const congestedRoads = roads.filter((road) => road.level === 'Heavy').length
@@ -85,6 +106,37 @@ function App() {
   function selectPage(page) {
     setActivePage(page)
     setMobileMenu(false)
+  }
+
+  function sortRoads(key) {
+    setSortConfig((current) => ({
+      key,
+      direction: current?.key === key && current.direction === 'asc' ? 'desc' : 'asc',
+    }))
+  }
+
+  function clearRoadFilters() {
+    setSearch('')
+    setFilter('All')
+    setAreaFilter('All')
+    setSignalFilter('All')
+  }
+
+  const roadTableProps = {
+    roads: filteredRoads,
+    totalRoads: roads.length,
+    search,
+    setSearch,
+    filter,
+    setFilter,
+    areaFilter,
+    setAreaFilter,
+    areaOptions,
+    signalFilter,
+    setSignalFilter,
+    sortConfig,
+    onSort: sortRoads,
+    onClearFilters: clearRoadFilters,
   }
 
   return (
@@ -240,14 +292,14 @@ function App() {
               </div>
             </section>
 
-            <RoadTable roads={filteredRoads} search={search} setSearch={setSearch} filter={filter} setFilter={setFilter} onViewAll={() => selectPage('traffic')} />
+            <RoadTable {...roadTableProps} onViewAll={() => selectPage('traffic')} />
           </>
         )}
 
         {activePage === 'traffic' && (
           <section className="page-section">
             <div className="page-intro"><div><h2>Traffic monitoring</h2><p>Search road segments and inspect sample traffic conditions.</p></div><span className="small-tag">{roads.length} ROAD SEGMENTS</span></div>
-            <RoadTable roads={filteredRoads} search={search} setSearch={setSearch} filter={filter} setFilter={setFilter} />
+            <RoadTable {...roadTableProps} />
           </section>
         )}
 
@@ -328,7 +380,43 @@ function TrafficChart({ series }) {
   )
 }
 
-function RoadTable({ roads, search, setSearch, filter, setFilter, onViewAll }) {
+function RoadTable({
+  roads,
+  totalRoads,
+  search,
+  setSearch,
+  filter,
+  setFilter,
+  areaFilter,
+  setAreaFilter,
+  areaOptions,
+  signalFilter,
+  setSignalFilter,
+  sortConfig,
+  onSort,
+  onClearFilters,
+  onViewAll,
+}) {
+  const hasFilters = search.trim() !== '' || filter !== 'All' || areaFilter !== 'All' || signalFilter !== 'All'
+
+  function renderSortHeading(label, key) {
+    const direction = sortConfig?.key === key ? sortConfig.direction : null
+    const indicator = direction === 'asc' ? '▲' : direction === 'desc' ? '▼' : '↕'
+    const accessibleDirection = direction === 'asc' ? 'ascending' : direction === 'desc' ? 'descending' : 'unsorted'
+    return (
+      <th aria-sort={direction === 'asc' ? 'ascending' : direction === 'desc' ? 'descending' : 'none'}>
+        <button
+          className="sort-button"
+          type="button"
+          onClick={() => onSort(key)}
+          aria-label={`Sort by ${label.toLowerCase()} (${accessibleDirection})`}
+        >
+          {label}<span aria-hidden="true">{indicator}</span>
+        </button>
+      </th>
+    )
+  }
+
   return (
     <section className="panel roads-panel">
       <div className="panel-heading roads-heading">
@@ -336,12 +424,23 @@ function RoadTable({ roads, search, setSearch, filter, setFilter, onViewAll }) {
         {onViewAll && <button className="text-button" onClick={onViewAll}>View all roads →</button>}
       </div>
       <div className="table-tools">
-        <label className="search-box"><span aria-hidden="true">⌕</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search roads or areas..." /></label>
-        <label className="filter-box"><span>Filter:</span><select value={filter} onChange={(event) => setFilter(event.target.value)}><option>All</option><option>Clear</option><option>Moderate</option><option>Heavy</option></select></label>
+        <label className="search-box"><span aria-hidden="true">⌕</span><input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search roads or areas..." aria-label="Search roads or areas" /></label>
+        <div className="filter-controls">
+          <label className="filter-box"><span>Congestion</span><select value={filter} onChange={(event) => setFilter(event.target.value)} aria-label="Filter by congestion"><option>All</option><option>Clear</option><option>Moderate</option><option>Heavy</option></select></label>
+          <label className="filter-box"><span>Area</span><select value={areaFilter} onChange={(event) => setAreaFilter(event.target.value)} aria-label="Filter by area"><option>All</option>{areaOptions.map((area) => <option key={area}>{area}</option>)}</select></label>
+          <label className="filter-box"><span>Signal</span><select value={signalFilter} onChange={(event) => setSignalFilter(event.target.value)} aria-label="Filter by signal status"><option>All</option><option>Active</option><option>Maintenance</option></select></label>
+          {hasFilters && <button className="clear-filters" type="button" onClick={onClearFilters}>Clear filters</button>}
+        </div>
       </div>
       <div className="table-wrap">
         <table>
-          <thead><tr><th>ROAD / AREA</th><th>VEHICLES</th><th>AVG. SPEED</th><th>CONGESTION</th><th>SIGNAL</th></tr></thead>
+          <thead><tr>
+            {renderSortHeading('Road / area', 'name')}
+            {renderSortHeading('Vehicles', 'vehicles')}
+            {renderSortHeading('Avg. speed', 'speed')}
+            {renderSortHeading('Congestion', 'level')}
+            {renderSortHeading('Signal', 'signal')}
+          </tr></thead>
           <tbody>
             {roads.map((road) => (
               <tr key={road.id}>
@@ -356,7 +455,7 @@ function RoadTable({ roads, search, setSearch, filter, setFilter, onViewAll }) {
           </tbody>
         </table>
       </div>
-      <div className="table-bottom"><span>Showing <strong>{roads.length}</strong> road segments</span><span>Demo data only</span></div>
+      <div className="table-bottom"><span>Showing <strong>{roads.length}</strong> of <strong>{totalRoads}</strong> road segments</span><span>Demo data only</span></div>
     </section>
   )
 }

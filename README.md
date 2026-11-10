@@ -5,9 +5,11 @@ FlowCity is a responsive, full-stack traffic operations dashboard for prioritizi
 ## Features
 
 - Responsive traffic command-center dashboard with city map, performance chart, and corridor summary.
-- Eight sample intersections with simulated speed, congestion, queue, and signal-phase readings.
+- Eight Addis Ababa demonstration intersections with simulated speed, congestion, queue, and signal-phase readings.
+- Schematic map positions are illustrative and are not verified geographic coordinates.
 - Persistent SQLite storage for signal-control settings and incidents.
 - Transactional traffic-reading history, sampled once per minute and retained for 30 days.
+- Traffic trends use recent saved readings and clearly identify modeled gaps in the 12-hour view.
 - Incident reporting, severity-based response queue, and open → investigating → resolved workflow.
 - Operator-controlled adaptive/fixed signal modes, persisted between restarts.
 - Server-sent live dashboard updates every five seconds, with automatic browser reconnection.
@@ -28,6 +30,8 @@ npm run dev
 ```
 
 Open the URL printed by Vite (normally `http://localhost:5173`). The Express API runs at `http://localhost:4000`, and Vite proxies `/api` requests to it. The SQLite database is created at `data/traffic.sqlite` on the first run.
+
+On startup, known legacy intersection seed rows are renamed in place without changing their IDs. A timestamped SQLite backup is created beside the database before any such migration; existing incidents and traffic history are retained.
 
 On PowerShell, if the `npm` script is blocked by the execution policy, use `npm.cmd install` and `npm.cmd run dev`.
 

@@ -29,14 +29,25 @@ export interface Incident {
 }
 
 const seedIntersections: Omit<Intersection, "mode">[] = [
-  { id: "j-01", name: "Central & 5th", district: "Downtown", latitude: 0.48, longitude: 0.39, dailyVehicles: 28400 },
-  { id: "j-02", name: "Market & Pine", district: "Downtown", latitude: 0.64, longitude: 0.27, dailyVehicles: 21900 },
-  { id: "j-03", name: "Riverside & 8th", district: "Riverside", latitude: 0.32, longitude: 0.55, dailyVehicles: 17200 },
-  { id: "j-04", name: "Union & Grand", district: "Civic Center", latitude: 0.77, longitude: 0.47, dailyVehicles: 24100 },
-  { id: "j-05", name: "Parkway & 12th", district: "West End", latitude: 0.19, longitude: 0.3, dailyVehicles: 14600 },
-  { id: "j-06", name: "Harbor & Bay", district: "Waterfront", latitude: 0.49, longitude: 0.7, dailyVehicles: 19800 },
-  { id: "j-07", name: "Oak & University", district: "University", latitude: 0.82, longitude: 0.69, dailyVehicles: 16600 },
-  { id: "j-08", name: "Broadway & Elm", district: "Midtown", latitude: 0.36, longitude: 0.23, dailyVehicles: 23100 },
+  { id: "j-01", name: "Bole Road", district: "Bole", latitude: 0.48, longitude: 0.39, dailyVehicles: 28400 },
+  { id: "j-02", name: "Mexico Square", district: "Kirkos", latitude: 0.64, longitude: 0.27, dailyVehicles: 21900 },
+  { id: "j-03", name: "Meskel Square", district: "Kirkos", latitude: 0.32, longitude: 0.55, dailyVehicles: 17200 },
+  { id: "j-04", name: "CMC Road", district: "Yeka", latitude: 0.77, longitude: 0.47, dailyVehicles: 24100 },
+  { id: "j-05", name: "Piassa Road", district: "Arada", latitude: 0.19, longitude: 0.3, dailyVehicles: 14600 },
+  { id: "j-06", name: "Africa Avenue", district: "Bole", latitude: 0.49, longitude: 0.7, dailyVehicles: 19800 },
+  { id: "j-07", name: "Churchill Avenue", district: "Arada", latitude: 0.82, longitude: 0.69, dailyVehicles: 16600 },
+  { id: "j-08", name: "Kazanchis", district: "Kirkos", latitude: 0.36, longitude: 0.23, dailyVehicles: 23100 },
+];
+
+const legacyIntersectionNames = [
+  { id: "j-01", oldName: "Central & 5th", name: "Bole Road", district: "Bole", dailyVehicles: 28400 },
+  { id: "j-02", oldName: "Market & Pine", name: "Mexico Square", district: "Kirkos", dailyVehicles: 21900 },
+  { id: "j-03", oldName: "Riverside & 8th", name: "Meskel Square", district: "Kirkos", dailyVehicles: 17200 },
+  { id: "j-04", oldName: "Union & Grand", name: "CMC Road", district: "Yeka", dailyVehicles: 24100 },
+  { id: "j-05", oldName: "Parkway & 12th", name: "Piassa Road", district: "Arada", dailyVehicles: 14600 },
+  { id: "j-06", oldName: "Harbor & Bay", name: "Africa Avenue", district: "Bole", dailyVehicles: 19800 },
+  { id: "j-07", oldName: "Oak & University", name: "Churchill Avenue", district: "Arada", dailyVehicles: 16600 },
+  { id: "j-08", oldName: "Broadway & Elm", name: "Kazanchis", district: "Kirkos", dailyVehicles: 23100 },
 ];
 
 const databasePath = resolve(
@@ -110,6 +121,46 @@ for (const intersection of seedIntersections) {
   );
 }
 
+const storedIntersections = database.prepare(
+  "SELECT id, name FROM intersections",
+).all() as Array<{ id: string; name: string }>;
+const intersectionsToRename = legacyIntersectionNames.filter((legacy) =>
+  storedIntersections.some((stored) => stored.id === legacy.id && stored.name === legacy.oldName),
+);
+
+if (intersectionsToRename.length > 0) {
+  const backupPath = `${databasePath}.pre-addis-${new Date().toISOString().replace(/[:.]/g, "-")}.sqlite`;
+  database.exec(`VACUUM INTO '${backupPath.replace(/'/g, "''")}'`);
+
+  const updateIntersection = database.prepare(`
+    UPDATE intersections
+    SET name = ?, district = ?, daily_vehicles = ?
+    WHERE id = ? AND name = ?
+  `);
+  const updateIncidentLocation = database.prepare(`
+    UPDATE incidents SET location = ?
+    WHERE intersection_id = ? AND location = ?
+  `);
+
+  database.exec("BEGIN IMMEDIATE");
+  try {
+    for (const intersection of intersectionsToRename) {
+      updateIntersection.run(
+        intersection.name,
+        intersection.district,
+        intersection.dailyVehicles,
+        intersection.id,
+        intersection.oldName,
+      );
+      updateIncidentLocation.run(intersection.name, intersection.id, intersection.oldName);
+    }
+    database.exec("COMMIT");
+  } catch (error) {
+    database.exec("ROLLBACK");
+    throw error;
+  }
+}
+
 const incidentCount = database.prepare(
   "SELECT COUNT(*) AS count FROM incidents",
 ).get() as { count: number };
@@ -123,7 +174,7 @@ if (incidentCount.count === 0) {
 
   addIncident.run(
     "j-04",
-    "Union & Grand",
+    "CMC Road",
     "Vehicle collision",
     "high",
     "investigating",
@@ -133,7 +184,7 @@ if (incidentCount.count === 0) {
 
   addIncident.run(
     "j-06",
-    "Harbor & Bay",
+    "Africa Avenue",
     "Roadwork",
     "medium",
     "open",
@@ -143,7 +194,7 @@ if (incidentCount.count === 0) {
 
   addIncident.run(
     "j-02",
-    "Market & Pine",
+    "Mexico Square",
     "Signal malfunction",
     "critical",
     "open",

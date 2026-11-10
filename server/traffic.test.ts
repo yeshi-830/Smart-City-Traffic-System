@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { Incident, Intersection } from "./database.js";
-import { buildTrafficForecast, buildTrafficRecommendations, buildTrafficTrend, getTrafficReading } from "./traffic.js";
+import type { Incident, Intersection, TrafficHistoryRecord } from "./database.js";
+import { buildTrafficForecast, buildTrafficRecommendations, buildTrafficTrend, buildTrafficTrendFromHistory, getTrafficReading } from "./traffic.js";
 
 const intersection: Intersection = {
   id: "j-01",
@@ -30,6 +30,41 @@ test("traffic trend includes 12 hourly points with percentage-based volumes", ()
   assert.equal(trend.length, 12);
   assert.ok(trend.every((point) => point.volume > 0 && point.volume <= 100));
   assert.ok(trend.every((point) => /^\d{1,2}(AM|PM)$/.test(point.time)));
+});
+
+test("traffic trend uses saved readings and models only hours without history", () => {
+  const now = new Date("2025-01-01T12:30:00Z");
+  const history: TrafficHistoryRecord[] = [
+    {
+      id: 1,
+      intersectionId: "j-01",
+      vehiclesPerHour: 950,
+      speed: 30,
+      congestion: "Heavy",
+      signalPhase: "Green",
+      waitSeconds: 40,
+      recordedAt: "2025-01-01 11:15:00",
+    },
+    {
+      id: 2,
+      intersectionId: "j-01",
+      vehiclesPerHour: 1065,
+      speed: 32,
+      congestion: "Moderate",
+      signalPhase: "Red",
+      waitSeconds: 38,
+      recordedAt: "2025-01-01 12:15:00",
+    },
+  ];
+
+  const result = buildTrafficTrendFromHistory(history, [intersection], now);
+
+  assert.equal(result.source, "mixed");
+  assert.equal(result.points.length, 12);
+  assert.equal(result.points[10].volume, 80);
+  assert.equal(result.points[11].volume, 90);
+  assert.equal(result.points[10].time, "2PM");
+  assert.equal(result.points[11].time, "3PM");
 });
 
 test("traffic forecast projects an upward trend and provides a bounded estimate", () => {

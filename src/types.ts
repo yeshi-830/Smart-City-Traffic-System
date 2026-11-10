@@ -42,6 +42,7 @@ export interface DashboardData {
   incidents: Incident[];
   recommendations: TrafficRecommendation[];
   trend: { time: string; volume: number }[];
+  trendSource: "history" | "mixed" | "modeled";
   forecast: TrafficForecast | null;
   updatedAt: string;
   dataMode: "simulated";

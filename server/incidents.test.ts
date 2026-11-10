@@ -238,6 +238,18 @@ test("health and traffic-history endpoints use the SQLite database", async (t) =
     assert.equal(readings.readings.length, 1);
     assert.equal(readings.readings[0].vehiclesPerHour, 1200);
   });
+
+  await t.test("dashboard identifies saved history in its trend source", async () => {
+    const response = await fetch(`${baseUrl}/api/dashboard`);
+    assert.equal(response.status, 200);
+    const dashboard = await response.json() as {
+      trendSource: string;
+      trend: Array<{ volume: number }>;
+    };
+    assert.equal(dashboard.trendSource, "mixed");
+    assert.equal(dashboard.trend.length, 12);
+    assert.equal(dashboard.trend.at(-1)?.volume, 100);
+  });
 });
 
 test("signal mode updates persist in SQLite and malformed JSON returns an API error", async () => {

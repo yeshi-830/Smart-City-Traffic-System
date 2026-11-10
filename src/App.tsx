@@ -326,6 +326,10 @@ export default function App() {
   }
 
   const summary = dashboard?.summary;
+  const estimatedVehiclesPerHour = dashboard?.intersections.reduce(
+    (total, intersection) => total + intersection.vehiclesPerHour,
+    0,
+  ) ?? 0;
   const timeDisplay = now.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
   const greeting = now.getHours() < 12 ? "morning" : now.getHours() < 17 ? "afternoon" : "evening";
   const dateDisplay = now.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" }).toUpperCase();
@@ -340,7 +344,7 @@ export default function App() {
         </div>
         <div className="workspace-picker">
           <div className="city-avatar">MC</div>
-          <div className="workspace-copy"><strong>Metro City</strong><span>Operations center</span></div>
+          <div className="workspace-copy"><strong>Addis Ababa</strong><span>Operations center</span></div>
           <ChevronDown size={14} />
         </div>
         <div className="nav-caption">WORKSPACE</div>
@@ -396,7 +400,7 @@ export default function App() {
             <div>
               <div className="heading-kicker"><span className={`live-pulse${liveConnected ? "" : " disconnected"}`} />{liveConnected ? "LIVE SIMULATION" : "RECONNECTING"} <span>·</span> {dateDisplay}</div>
               <h1>Good {greeting}, Mihiretu <span className="wave">✳</span></h1>
-              <p>Here’s what’s happening across Metro City today.</p>
+              <p>Here’s what’s happening across Addis Ababa today.</p>
             </div>
             <div className="heading-actions">
               <button className="button button-secondary" onClick={exportDashboard} disabled={!dashboard}>
@@ -414,9 +418,15 @@ export default function App() {
           <section className="metrics-grid" aria-label="Traffic network summary">
             <article className="metric-card">
               <div className="metric-top"><span className="metric-icon mint"><Signal size={17} /></span><span className="metric-kicker">NETWORK STATUS</span><button className="metric-more" aria-label="View signal details" title="View intersections" onClick={() => document.getElementById("intersections")?.scrollIntoView({ behavior: "smooth", block: "center" })}><ArrowUpRight size={15} /></button></div>
-              <div className="metric-value">{loading ? "—" : `${summary?.monitoredIntersections ?? 0}`}<span className="metric-unit">/ 12</span></div>
-              <div className="metric-foot"><span className="status-dot" />{summary?.adaptiveSignals ?? 0} adaptive signals active</div>
-              <div className="metric-progress"><span style={{ width: `${Math.min(100, (summary?.monitoredIntersections ?? 0) / 12 * 100)}%` }} /></div>
+              <div className="metric-value">{loading ? "—" : summary?.monitoredIntersections ?? 0}<span className="metric-unit">intersections</span></div>
+              <div className="metric-foot"><span className="status-dot" />{summary?.adaptiveSignals ?? 0} adaptive signal plans</div>
+              <div className="metric-progress"><span style={{ width: `${summary?.monitoredIntersections ? (summary.adaptiveSignals / summary.monitoredIntersections) * 100 : 0}%` }} /></div>
+            </article>
+            <article className="metric-card">
+              <div className="metric-top"><span className="metric-icon blue"><CarFront size={17} /></span><span className="metric-kicker">ESTIMATED FLOW</span><span className="metric-trend metric-demo-tag">SIMULATED</span></div>
+              <div className="metric-value">{loading ? "—" : estimatedVehiclesPerHour.toLocaleString()}<span className="metric-unit">veh/hr</span></div>
+              <div className="metric-foot">Across monitored intersections</div>
+              <div className="micro-bars">{[32, 47, 39, 55, 44, 67, 51, 75, 60, 80, 65, 88].map((height, index) => <i key={index} style={{ height: `${height}%` }} />)}</div>
             </article>
             <article className="metric-card">
               <div className="metric-top"><span className="metric-icon blue"><Gauge size={17} /></span><span className="metric-kicker">AVERAGE SPEED</span><span className="metric-trend metric-demo-tag">SIMULATED</span></div>
@@ -488,9 +498,9 @@ export default function App() {
                     <ChevronDown size={14} aria-hidden="true" />
                   </label>
                 </div>
-                <div className="chart-summary"><span className="chart-value">{averageTrend ?? "—"}<span>%</span></span><span className="chart-summary-label">avg. modeled road capacity</span></div>
+                <div className="chart-summary"><span className="chart-value">{averageTrend ?? "—"}<span>%</span></span><span className="chart-summary-label">avg. road capacity</span></div>
                 <TrafficChart data={visibleTrend} hours={chartRange} />
-                <div className="chart-foot"><span><i className="chart-key" />Modeled road capacity</span><span>Hourly average · Simulated data</span></div>
+                <div className="chart-foot"><span><i className="chart-key" />Road capacity</span><span>{dashboard?.trendSource === "history" ? "Saved simulated readings" : dashboard?.trendSource === "mixed" ? "Saved history + modeled gaps" : "Modeled estimate · No recent history"}</span></div>
                 <div className="forecast-panel" aria-live="polite">
                   <div className="forecast-title">
                     <span className="forecast-icon"><Sparkles size={14} /></span>

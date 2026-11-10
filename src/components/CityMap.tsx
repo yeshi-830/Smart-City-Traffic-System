@@ -25,7 +25,7 @@ function CityMap({ intersections, onSelect, selectedId }: CityMapProps) {
       <div className="map-topline">
         <div>
           <span className="eyebrow">NETWORK OVERVIEW</span>
-          <h2>Central District</h2>
+          <h2>Addis Ababa network</h2>
         </div>
         <button
           className={`icon-button map-layer-button${layersEnabled ? " active" : ""}`}
@@ -34,7 +34,7 @@ function CityMap({ intersections, onSelect, selectedId }: CityMapProps) {
           onClick={() => setLayersEnabled(!layersEnabled)}
         ><Layers2 size={16} /></button>
       </div>
-      <div className="city-map" aria-label="Map of monitored city intersections">
+      <div className="city-map" aria-label="Illustrative Addis Ababa traffic network schematic">
         <svg viewBox="0 0 560 340" role="img">
           <defs>
             <pattern id="map-grid" width="19" height="19" patternUnits="userSpaceOnUse">
@@ -64,10 +64,10 @@ function CityMap({ intersections, onSelect, selectedId }: CityMapProps) {
           {streets.map((path) => (
             <path key={`edge-${path}`} d={path} fill="none" stroke="#d6ded7" strokeWidth="1" strokeLinecap="round" />
           ))}
-          <text x="30" y="22" className="map-label">WEST END</text>
-          <text x="245" y="19" className="map-label">DOWNTOWN</text>
-          <text x="415" y="18" className="map-label">CIVIC CENTER</text>
-          <text x="353" y="318" className="map-label">WATERFRONT</text>
+          <text x="30" y="22" className="map-label">ARADA</text>
+          <text x="245" y="19" className="map-label">KIRKOS</text>
+          <text x="415" y="18" className="map-label">BOLE</text>
+          <text x="353" y="318" className="map-label">YEKA</text>
           {intersections.map((intersection) => {
             const x = intersection.longitude * 520 + 20;
             const y = intersection.latitude * 300 + 14;
@@ -96,7 +96,7 @@ function CityMap({ intersections, onSelect, selectedId }: CityMapProps) {
             );
           })}
         </svg>
-        <div className="map-attribution">STREET NETWORK · SIMULATED LIVE DATA</div>
+        <div className="map-attribution">SCHEMATIC NETWORK · ILLUSTRATIVE POSITIONS</div>
         <button className="map-location-button" aria-label="Change map orientation" onClick={() => setNorth(!north)}>
           <LocateFixed size={16} className={north ? "north-up" : ""} />
         </button>

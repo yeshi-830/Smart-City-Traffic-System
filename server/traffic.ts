@@ -1,4 +1,4 @@
-import type { Incident, Intersection } from "./database.js";
+import type { Incident, Intersection, TrafficHistoryRecord } from "./database.js";
 
 export type CongestionLevel = "Clear" | "Moderate" | "Heavy" | "Severe";
 
@@ -28,6 +28,68 @@ export interface TrafficForecast {
   lowerBound: number;
   upperBound: number;
   direction: "rising" | "falling" | "stable";
+}
+
+export interface TrafficTrend {
+  points: { time: string; volume: number }[];
+  source: "history" | "mixed" | "modeled";
+}
+
+export function buildTrafficTrendFromHistory(
+  history: TrafficHistoryRecord[],
+  intersections: Intersection[],
+  now = new Date(),
+): TrafficTrend {
+  const modeled = buildTrafficTrend(now);
+  const capacityByIntersection = new Map(
+    intersections.map((intersection) => [intersection.id, intersection.dailyVehicles / 24]),
+  );
+  const endHour = new Date(Date.UTC(
+    now.getUTCFullYear(),
+    now.getUTCMonth(),
+    now.getUTCDate(),
+    now.getUTCHours(),
+  ));
+  const buckets = new Map<string, { total: number; count: number }>();
+
+  for (const reading of history) {
+    const recordedAt = new Date(`${reading.recordedAt.replace(" ", "T")}Z`);
+    if (Number.isNaN(recordedAt.getTime())) continue;
+    const hour = new Date(Date.UTC(
+      recordedAt.getUTCFullYear(),
+      recordedAt.getUTCMonth(),
+      recordedAt.getUTCDate(),
+      recordedAt.getUTCHours(),
+    ));
+    const hoursAgo = Math.round((endHour.getTime() - hour.getTime()) / 3_600_000);
+    const capacity = capacityByIntersection.get(reading.intersectionId);
+    if (hoursAgo < 0 || hoursAgo >= 12 || !capacity) continue;
+
+    const key = hour.toISOString();
+    const bucket = buckets.get(key) ?? { total: 0, count: 0 };
+    bucket.total += Math.min(100, Math.max(0, reading.vehiclesPerHour / capacity * 100));
+    bucket.count += 1;
+    buckets.set(key, bucket);
+  }
+
+  const points = Array.from({ length: 12 }, (_, index) => {
+    const hour = new Date(endHour.getTime() - (11 - index) * 3_600_000);
+    const bucket = buckets.get(hour.toISOString());
+    return {
+      time: hour.toLocaleTimeString("en-US", {
+        hour: "numeric",
+        hour12: true,
+        timeZone: "Africa/Addis_Ababa",
+      }).replace(" ", ""),
+      volume: bucket ? Math.round(bucket.total / bucket.count) : modeled[index].volume,
+    };
+  });
+  const historyPoints = buckets.size;
+
+  return {
+    points,
+    source: historyPoints === 0 ? "modeled" : historyPoints === 12 ? "history" : "mixed",
+  };
 }
 
 export function buildTrafficForecast(

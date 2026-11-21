@@ -1,33 +1,341 @@
+
+/* =========================================================
+   APPLICATION DESIGN SYSTEM
+   Modern • Scalable • Responsive • Maintainable
+   ========================================================= */
+
+/* 1. Design Tokens */
 :root {
-  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  color: #17243b;
-  background: #f5f7fb;
+  /* Typography */
+  font-family:
+    Inter,
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+
+  /* Brand Colors */
+  --color-primary: #635bdb;
+  --color-primary-hover: #5148c7;
+  --color-primary-soft: #eeedff;
+
+  /* Backgrounds */
+  --color-background: #f5f7fb;
+  --color-surface: #ffffff;
+  --color-surface-muted: #f8fafc;
+
+  /* Text */
+  --color-text: #17243b;
+  --color-text-secondary: #64748b;
+  --color-text-muted: #94a3b8;
+
+  /* Borders */
+  --color-border: #e5eaf1;
+  --color-border-strong: #d5dce7;
+
+  /* Status Colors */
+  --color-success: #16a36a;
+  --color-success-soft: #e9f8f0;
+
+  --color-warning: #d99019;
+  --color-warning-soft: #fff7e8;
+
+  --color-danger: #dc4c4c;
+  --color-danger-soft: #fff0f0;
+
+  --color-info: #2685d9;
+  --color-info-soft: #edf6ff;
+
+  /* Typography Scale */
+  --font-xs: 0.75rem;
+  --font-sm: 0.875rem;
+  --font-base: 1rem;
+  --font-lg: 1.125rem;
+  --font-xl: 1.25rem;
+  --font-2xl: 1.5rem;
+  --font-3xl: 1.875rem;
+  --font-4xl: 2.25rem;
+
+  /* Font Weights */
+  --weight-normal: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+
+  /* Spacing */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+  --space-10: 2.5rem;
+  --space-12: 3rem;
+  --space-16: 4rem;
+
+  /* Border Radius */
+  --radius-sm: 0.375rem;
+  --radius-md: 0.625rem;
+  --radius-lg: 0.875rem;
+  --radius-xl: 1.125rem;
+  --radius-2xl: 1.5rem;
+  --radius-full: 9999px;
+
+  /* Shadows */
+  --shadow-xs: 0 1px 2px rgb(15 23 42 / 4%);
+  --shadow-sm: 0 2px 8px rgb(15 23 42 / 5%);
+  --shadow-md: 0 6px 20px rgb(15 23 42 / 7%);
+  --shadow-lg: 0 12px 32px rgb(15 23 42 / 9%);
+
+  /* Transitions */
+  --transition-fast: 150ms ease;
+  --transition-normal: 250ms ease;
+  --transition-slow: 350ms ease;
+
+  /* Layout */
+  --container-width: 1440px;
+  --sidebar-width: 260px;
+  --header-height: 72px;
+
+  /* Default Theme */
+  color: var(--color-text);
+  background: var(--color-background);
 }
 
-* {
+/* 2. Reset */
+*,
+*::before,
+*::after {
   box-sizing: border-box;
+}
+
+html {
+  min-width: 320px;
+  min-height: 100%;
+  scroll-behavior: smooth;
+  scroll-padding-top: var(--header-height);
 }
 
 body {
   min-width: 320px;
   min-height: 100vh;
   margin: 0;
+  background: var(--color-background);
+  color: var(--color-text);
+  font-size: var(--font-base);
+  line-height: 1.6;
 }
 
+/* 3. Root Application */
+#root {
+  min-height: 100vh;
+  isolation: isolate;
+}
+
+/* 4. Typography */
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  margin: 0;
+  color: var(--color-text);
+  font-weight: var(--weight-semibold);
+  line-height: 1.25;
+  letter-spacing: -0.025em;
+}
+
+h1 {
+  font-size: clamp(1.75rem, 3vw, 2.25rem);
+}
+
+h2 {
+  font-size: clamp(1.375rem, 2vw, 1.75rem);
+}
+
+h3 {
+  font-size: var(--font-xl);
+}
+
+p {
+  margin: 0;
+}
+
+small {
+  font-size: var(--font-sm);
+}
+
+a {
+  color: var(--color-primary);
+  text-decoration: none;
+  transition: color var(--transition-fast);
+}
+
+a:hover {
+  color: var(--color-primary-hover);
+}
+
+img,
+svg,
+video {
+  display: block;
+  max-width: 100%;
+}
+
+img {
+  height: auto;
+}
+
+/* 5. Form Elements */
 button,
 input,
-select {
+select,
+textarea {
   font: inherit;
 }
 
 button {
+  color: inherit;
   cursor: pointer;
 }
 
-#root {
-  min-height: 100vh;
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+input,
+select,
+textarea {
+  color: var(--color-text);
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--color-text-muted);
+}
+
+textarea {
+  resize: vertical;
+}
+
+/* 6. Interactive States */
+:focus-visible {
+  outline: 3px solid rgb(99 91 219 / 30%);
+  outline-offset: 3px;
+}
+
+button,
+a,
+input,
+select,
+textarea {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* 7. Selection */
+::selection {
+  color: #ffffff;
+  background: var(--color-primary);
+}
+
+/* 8. Scrollbars */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: var(--radius-full);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* 9. Reusable Utility Classes */
+.container {
+  width: min(100% - 2rem, var(--container-width));
+  margin-inline: auto;
+}
+
+.text-muted {
+  color: var(--color-text-secondary);
+}
+
+.text-primary {
+  color: var(--color-primary);
+}
+
+.text-success {
+  color: var(--color-success);
+}
+
+.text-danger {
+  color: var(--color-danger);
+}
+
+.surface {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+}
+
+/* 10. Responsive Foundation */
+@media (max-width: 768px) {
+  :root {
+    --header-height: 64px;
+    --sidebar-width: 0px;
+  }
+
+  body {
+    font-size: var(--font-sm);
+  }
+
+  .container {
+    width: min(100% - 1.5rem, var(--container-width));
+  }
+}
+
+@media (max-width: 480px) {
+  :root {
+    --space-8: 1.5rem;
+    --space-10: 2rem;
+  }
+
+  h1 {
+    font-size: 1.625rem;
+  }
+}
+
+/* 11. Accessibility */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

@@ -1,3 +1,4 @@
+
 {
   "name": "smart-city-traffic-system",
   "version": "1.0.0",
@@ -12,7 +13,8 @@
     "dev:web": "vite",
     "build": "tsc --noEmit && vite build && tsc -p tsconfig.server.json",
     "start": "node dist/server/index.js",
-    "test": "tsx --test server/**/*.test.ts"
+    "test": "tsx --test server/**/*.test.ts",
+    "lint": "oxlint"
   },
   "dependencies": {
     "express": "^5.1.0",

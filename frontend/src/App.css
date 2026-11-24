@@ -2117,3 +2117,193 @@ td:first-child strong {
 /* ============================================================
    END OF TRAFFICFLOW DESIGN SYSTEM
    ============================================================ */
+
+/* ============================================================
+   TRAFFICFLOW — MODERN SIDEBAR ENHANCEMENTS
+   ============================================================ */
+
+.sidebar {
+  background: linear-gradient(180deg, #ffffff 0%, #fafbff 100%);
+  border-right: 1px solid #e5e9f2;
+  box-shadow: 4px 0 24px rgb(25 35 65 / 3%);
+  padding: 25px 16px 17px;
+}
+
+.brand {
+  gap: 12px;
+  margin-bottom: 42px;
+}
+
+.brand-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  background: linear-gradient(145deg, #7165f5, #4436c5);
+  box-shadow: 0 6px 15px rgb(81 69 217 / 25%);
+  transition: transform 220ms ease, box-shadow 220ms ease;
+}
+
+.brand-icon:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 9px 19px rgb(81 69 217 / 30%);
+}
+
+.brand-copy strong {
+  color: #17233b;
+  font-size: 20px;
+  letter-spacing: -0.8px;
+}
+
+.brand-copy span {
+  color: #929bb0;
+  font-size: 9px;
+  letter-spacing: 1.6px;
+}
+
+.sidebar-label {
+  margin-bottom: 13px;
+  color: #9aa4b7;
+  font-size: 10px;
+  letter-spacing: 1.5px;
+}
+
+.side-nav {
+  gap: 7px;
+}
+
+.nav-item {
+  min-height: 48px;
+  gap: 13px;
+  padding: 0 14px;
+  border: 1px solid transparent;
+  border-radius: 11px;
+  color: #65718a;
+  font-size: 12px;
+  font-weight: 600;
+  transition: all 180ms ease;
+}
+
+.nav-item:hover {
+  transform: translateX(3px);
+  border-color: #ecebff;
+  background: #f7f6ff;
+  color: #5145d9;
+}
+
+.nav-item.nav-active {
+  border-color: #e5e1ff;
+  background: linear-gradient(100deg, #efedff, #f7f6ff);
+  color: #5145d9;
+  font-weight: 750;
+  box-shadow: inset 3px 0 0 #5145d9;
+}
+
+.nav-icon {
+  width: 25px;
+  font-size: 20px;
+}
+
+.nav-count {
+  min-width: 24px;
+  height: 24px;
+  border: 1px solid #e8e5ff;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #5145d9;
+}
+
+.sidebar-bottom {
+  gap: 17px;
+}
+
+.system-card {
+  padding: 16px;
+  border: 1px solid #e8eaf3;
+  border-radius: 13px;
+  background: linear-gradient(145deg, #f8f9ff, #f2f4fb);
+}
+
+.system-card-top {
+  color: #27344c;
+  font-size: 12px;
+}
+
+.system-card p {
+  color: #66738a;
+}
+
+.system-card small {
+  color: #929bb0;
+}
+
+.status-track {
+  height: 6px;
+  background: #e4e8f1;
+}
+
+.status-track span {
+  background: linear-gradient(90deg, #15966a, #42c99a);
+}
+
+.profile {
+  gap: 11px;
+  padding: 15px 5px 3px;
+  border-top-color: #e8eaf1;
+}
+
+.avatar {
+  width: 39px;
+  height: 39px;
+  border: 1px solid #dedaff;
+  border-radius: 12px;
+  background: linear-gradient(145deg, #efedff, #e5e2ff);
+  color: #5145d9;
+}
+
+.profile-info strong {
+  color: #26334b;
+  font-size: 11px;
+}
+
+.profile-info span {
+  color: #8994a8;
+}
+
+.profile-dots {
+  cursor: pointer;
+  transition: color 150ms ease;
+}
+
+.profile-dots:hover {
+  color: #5145d9;
+}
+
+/* Better sidebar scrolling on shorter screens */
+@media (max-height: 650px) {
+  .sidebar {
+    overflow-y: auto;
+  }
+
+  .brand {
+    margin-bottom: 25px;
+  }
+
+  .sidebar-bottom {
+    margin-top: 35px;
+  }
+}
+
+/* Mobile sidebar refinements */
+@media (max-width: 850px) {
+  .sidebar {
+    padding: 24px 17px 17px;
+  }
+
+  .sidebar.sidebar-open {
+    box-shadow: 12px 0 40px rgb(15 23 42 / 15%);
+  }
+
+  .nav-item {
+    min-height: 49px;
+  }
+}

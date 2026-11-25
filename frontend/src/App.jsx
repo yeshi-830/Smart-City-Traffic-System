@@ -1,22 +1,6 @@
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import './App.css'
-
-const initialRoads = [
-  { id: 1, name: 'Bole Road', area: 'Bole', vehicles: 1240, speed: 24, level: 'Heavy', signal: 'Active' },
-  { id: 2, name: 'Mexico Square', area: 'Kirkos', vehicles: 860, speed: 38, level: 'Moderate', signal: 'Active' },
-  { id: 3, name: 'Meskel Square', area: 'Kirkos', vehicles: 1530, speed: 16, level: 'Heavy', signal: 'Active' },
-  { id: 4, name: 'CMC Road', area: 'Yeka', vehicles: 540, speed: 48, level: 'Clear', signal: 'Active' },
-  { id: 5, name: 'Piassa Road', area: 'Arada', vehicles: 980, speed: 29, level: 'Moderate', signal: 'Maintenance' },
-  { id: 6, name: 'Africa Avenue', area: 'Bole', vehicles: 710, speed: 42, level: 'Clear', signal: 'Active' },
-]
-
-const signals = [
-  { id: 1, location: 'Bole Road Junction', state: 'Green', duration: '35 sec' },
-  { id: 2, location: 'Meskel Square', state: 'Red', duration: '52 sec' },
-  { id: 3, location: 'Mexico Square', state: 'Yellow', duration: '5 sec' },
-  { id: 4, location: 'CMC Intersection', state: 'Green', duration: '28 sec' },
-]
 
 const navItems = [
   { id: 'overview', label: 'Overview', icon: '▦' },
@@ -26,9 +10,40 @@ const navItems = [
 ]
 
 const trafficSeries = {
-  Today: { labels: ['6 AM', '8 AM', '10 AM', '12 PM', '2 PM', '4 PM', '6 PM'], values: [28, 62, 45, 54, 48, 77, 61] },
-  Week: { labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'], values: [48, 62, 54, 72, 66, 42, 34] },
-  Month: { labels: ['Week 1', 'Week 2', 'Week 3', 'Week 4'], values: [54, 68, 61, 76] },
+  Today: {
+    labels: ['6 AM', '8 AM', '10 AM', '12 PM', '2 PM', '4 PM', '6 PM'],
+    values: [28, 62, 45, 54, 48, 77, 61],
+  },
+  Week: {
+    labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+    values: [48, 62, 54, 72, 66, 42, 34],
+  },
+  Month: {
+    labels: ['Week 1', 'Week 2', 'Week 3', 'Week 4'],
+    values: [54, 68, 61, 76],
+  },
+}
+
+function normalizeIntersection(item, index) {
+  return {
+    id: item.id ?? item.intersectionId ?? index,
+    name: item.name ?? 'Unknown intersection',
+    area: item.district ?? 'Unknown area',
+    vehicles: Number(item.vehiclesPerHour ?? 0),
+    dailyVehicles: Number(item.dailyVehicles ?? 0),
+    speed: Number(item.speed ?? 0),
+    level: item.congestion ?? 'Unknown',
+    signal: item.signalPhase ?? 'Unknown',
+    mode: item.mode ?? 'unknown',
+    waitSeconds: Number(item.waitSeconds ?? 0),
+  }
+}
+
+function extractIntersections(payload) {
+  if (Array.isArray(payload)) return payload
+  if (Array.isArray(payload?.intersections)) return payload.intersections
+  if (Array.isArray(payload?.data)) return payload.data
+  return []
 }
 
 function App() {
@@ -38,11 +53,87 @@ function App() {
   const [areaFilter, setAreaFilter] = useState('All')
   const [signalFilter, setSignalFilter] = useState('All')
   const [sortConfig, setSortConfig] = useState(null)
-  const [roads] = useState(initialRoads)
+
+  const [roads, setRoads] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [apiError, setApiError] = useState('')
+  const [dataMode, setDataMode] = useState('simulated')
   const [lastUpdated, setLastUpdated] = useState(null)
+
   const [notice, setNotice] = useState('')
   const [mobileMenu, setMobileMenu] = useState(false)
   const [period, setPeriod] = useState('Week')
+
+  // Load intersections from the backend.
+  async function loadIntersections(showLoading = false) {
+    if (showLoading) setLoading(true)
+
+    try {
+      const response = await fetch('/api/intersections')
+
+      if (!response.ok) {
+        throw new Error(`Server returned ${response.status}`)
+      }
+
+      const payload = await response.json()
+      const intersections = extractIntersections(payload)
+
+      if (!intersections.length) {
+        throw new Error('The API returned no intersections.')
+      }
+
+      setRoads(intersections.map(normalizeIntersection))
+      setApiError('')
+      setLastUpdated(new Date())
+    } catch (error) {
+      setApiError(error.message || 'Could not load traffic data.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // Initial API request and automatic server updates.
+  useEffect(() => {
+    loadIntersections(true)
+
+    const eventSource = new EventSource('/api/events')
+
+    eventSource.onmessage = (event) => {
+      try {
+        const dashboard = JSON.parse(event.data)
+
+        if (dashboard.dataMode) {
+          setDataMode(dashboard.dataMode)
+        }
+
+        const intersections = extractIntersections(dashboard)
+
+        if (intersections.length) {
+          setRoads(intersections.map(normalizeIntersection))
+          setApiError('')
+          setLastUpdated(new Date())
+        }
+      } catch {
+        setApiError('Received an invalid update from the server.')
+      }
+    }
+
+    eventSource.onerror = () => {
+      setApiError('Live connection interrupted. Waiting for reconnection...')
+    }
+
+    return () => {
+      eventSource.close()
+    }
+  }, [])
+
+  const signals = roads.map((road) => ({
+    id: road.id,
+    location: road.name,
+    state: road.signal,
+    duration: `${road.waitSeconds} sec`,
+    mode: road.mode,
+  }))
 
   const areaOptions = useMemo(
     () => [...new Set(roads.map((road) => road.area))].sort(),
@@ -69,7 +160,7 @@ function App() {
 
     const { key, direction } = sortConfig
 
-    return matches.sort((a, b) => {
+    return [...matches].sort((a, b) => {
       const left = a[key]
       const right = b[key]
 
@@ -85,14 +176,26 @@ function App() {
     })
   }, [roads, search, filter, areaFilter, signalFilter, sortConfig])
 
-  const totalVehicles = roads.reduce((sum, road) => sum + road.vehicles, 0)
-  const congestedRoads = roads.filter((road) => road.level === 'Heavy').length
-  const averageSpeed = Math.round(
-    roads.reduce((sum, road) => sum + road.speed, 0) / roads.length,
+  const totalVehicles = roads.reduce(
+    (sum, road) => sum + road.vehicles,
+    0,
   )
 
+  const congestedRoads = roads.filter(
+    (road) => road.level.toLowerCase() === 'heavy',
+  ).length
+
+  const averageSpeed = roads.length
+    ? Math.round(
+        roads.reduce((sum, road) => sum + road.speed, 0) / roads.length,
+      )
+    : 0
+
   const areaStats = [...roads.reduce((areas, road) => {
-    areas.set(road.area, (areas.get(road.area) || 0) + road.vehicles)
+    areas.set(
+      road.area,
+      (areas.get(road.area) || 0) + road.vehicles,
+    )
     return areas
   }, new Map())]
     .map(([area, vehicles]) => ({ area, vehicles }))
@@ -103,31 +206,57 @@ function App() {
     window.setTimeout(() => setNotice(''), 3000)
   }
 
-  function refreshDashboard() {
-    setLastUpdated(new Date())
-    showNotice('Dashboard refreshed. Sample data remains unchanged.')
+  async function refreshDashboard() {
+    await loadIntersections(true)
+
+    if (!apiError) {
+      showNotice('Traffic data refreshed from the backend.')
+    }
   }
 
   function exportReport() {
+    if (!roads.length) {
+      showNotice('No traffic data available to export.')
+      return
+    }
+
     const csvRows = [
-      ['Road', 'Area', 'Vehicles', 'Average speed (km/h)', 'Congestion', 'Signal'],
+      [
+        'Intersection',
+        'Area',
+        'Vehicles per hour',
+        'Daily vehicles',
+        'Average speed (km/h)',
+        'Congestion',
+        'Signal phase',
+        'Signal mode',
+        'Waiting time (seconds)',
+      ],
       ...roads.map((road) => [
         road.name,
         road.area,
         road.vehicles,
+        road.dailyVehicles,
         road.speed,
         road.level,
         road.signal,
+        road.mode,
+        road.waitSeconds,
       ]),
     ]
 
     const csv = csvRows
       .map((row) =>
-        row.map((value) => `"${String(value).replaceAll('"', '""')}"`).join(','),
+        row.map((value) =>
+          `"${String(value).replaceAll('"', '""')}"`,
+        ).join(','),
       )
       .join('\n')
 
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    const blob = new Blob([csv], {
+      type: 'text/csv;charset=utf-8;',
+    })
+
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
 
@@ -148,7 +277,9 @@ function App() {
     setSortConfig((current) => ({
       key,
       direction:
-        current?.key === key && current.direction === 'asc' ? 'desc' : 'asc',
+        current?.key === key && current.direction === 'asc'
+          ? 'desc'
+          : 'asc',
     }))
   }
 
@@ -174,6 +305,7 @@ function App() {
     sortConfig,
     onSort: sortRoads,
     onClearFilters: clearRoadFilters,
+    loading,
   }
 
   return (
@@ -185,6 +317,7 @@ function App() {
             <strong>TrafficFlow</strong>
             <span>SMART CITY SYSTEM</span>
           </div>
+
           <button
             className="close-menu"
             onClick={() => setMobileMenu(false)}
@@ -203,8 +336,12 @@ function App() {
               className={`nav-item ${activePage === item.id ? 'nav-active' : ''}`}
               onClick={() => selectPage(item.id)}
             >
-              <span className="nav-icon" aria-hidden="true">{item.icon}</span>
+              <span className="nav-icon" aria-hidden="true">
+                {item.icon}
+              </span>
+
               {item.label}
+
               {item.id === 'traffic' && (
                 <span className="nav-count">{roads.length}</span>
               )}
@@ -218,9 +355,18 @@ function App() {
               <span className="pulse-dot" />
               <strong>System status</strong>
             </div>
-            <p>Demo dashboard online</p>
+
+            <p>
+              {apiError ? 'Connection issue' : 'Backend connected'}
+            </p>
+
             <div className="status-track"><span /></div>
-            <small>Sample data · No live sensors</small>
+
+            <small>
+              {dataMode === 'simulated'
+                ? 'Simulated traffic data'
+                : 'Backend traffic data'}
+            </small>
           </div>
 
           <div className="profile">
@@ -258,6 +404,7 @@ function App() {
                 Workspace <span>/</span>{' '}
                 {navItems.find((item) => item.id === activePage)?.label}
               </div>
+
               <h1>
                 {activePage === 'overview'
                   ? 'Traffic overview'
@@ -267,16 +414,25 @@ function App() {
           </div>
 
           <div className="topbar-actions">
-            <div className="live-badge"><span /> Demo mode</div>
+            <div className="live-badge">
+              <span />
+              {dataMode === 'simulated' ? 'Simulated data' : 'Connected'}
+            </div>
+
             <button
               className="icon-button"
               onClick={refreshDashboard}
               aria-label="Refresh dashboard"
               title="Refresh dashboard"
+              disabled={loading}
             >
               ↻
             </button>
-            <button className="primary-button export-button" onClick={exportReport}>
+
+            <button
+              className="primary-button export-button"
+              onClick={exportReport}
+            >
               <span aria-hidden="true">⇩</span> Export report
             </button>
           </div>
@@ -284,12 +440,20 @@ function App() {
 
         {notice && <div className="notice" role="status">{notice}</div>}
 
+        {apiError && (
+          <div className="notice" role="alert">
+            {apiError}
+          </div>
+        )}
+
         {activePage === 'overview' && (
           <>
             <section className="welcome-row">
               <div>
                 <p className="eyebrow">CITY TRAFFIC INTELLIGENCE</p>
-                <h2>Good day, Administrator <span aria-hidden="true">✦</span></h2>
+                <h2>
+                  Good day, Administrator <span aria-hidden="true">✦</span>
+                </h2>
                 <p className="muted">
                   Here’s what’s happening across the city’s roads.
                 </p>
@@ -305,25 +469,57 @@ function App() {
                           day: 'numeric',
                           year: 'numeric',
                         })
-                      : 'Not refreshed yet'}
+                      : 'Waiting for data'}
                   </strong>
+
                   <span>
                     {lastUpdated
                       ? `Last updated ${lastUpdated.toLocaleTimeString([], {
                           hour: '2-digit',
                           minute: '2-digit',
                         })}`
-                      : 'Click refresh to update'}
+                      : 'Connecting to backend...'}
                   </span>
                 </div>
               </div>
             </section>
 
             <section className="stats-grid" aria-label="Traffic statistics">
-              <StatCard title="Vehicles monitored" value={totalVehicles.toLocaleString()} unit="vehicles" icon="▤" color="blue" note="Across monitored roads" />
-              <StatCard title="Active signals" value={signals.length} unit="signals" icon="◉" color="green" note="Sample intersections" />
-              <StatCard title="Congested roads" value={congestedRoads} unit="roads" icon="⇄" color="orange" note="Require attention" />
-              <StatCard title="Average speed" value={averageSpeed} unit="km/h" icon="↗" color="purple" note="Across monitored roads" />
+              <StatCard
+                title="Vehicles per hour"
+                value={totalVehicles.toLocaleString()}
+                unit="vehicles"
+                icon="▤"
+                color="blue"
+                note="Across monitored intersections"
+              />
+
+              <StatCard
+                title="Monitored signals"
+                value={signals.length}
+                unit="signals"
+                icon="◉"
+                color="green"
+                note="Connected intersections"
+              />
+
+              <StatCard
+                title="Congested roads"
+                value={congestedRoads}
+                unit="roads"
+                icon="⇄"
+                color="orange"
+                note="Require attention"
+              />
+
+              <StatCard
+                title="Average speed"
+                value={averageSpeed}
+                unit="km/h"
+                icon="↗"
+                color="purple"
+                note="Across monitored intersections"
+              />
             </section>
 
             <section className="analytics-grid" aria-label="Traffic analytics">
@@ -331,8 +527,9 @@ function App() {
                 <div className="panel-heading">
                   <div>
                     <h3>Traffic volume trends</h3>
-                    <p>Relative vehicle activity · illustrative sample</p>
+                    <p>Illustrative traffic activity · sample chart</p>
                   </div>
+
                   <div className="period-tabs" aria-label="Traffic chart period">
                     {Object.keys(trafficSeries).map((range) => (
                       <button
@@ -346,6 +543,7 @@ function App() {
                     ))}
                   </div>
                 </div>
+
                 <TrafficChart series={trafficSeries[period]} />
               </div>
 
@@ -353,8 +551,9 @@ function App() {
                 <div className="panel-heading">
                   <div>
                     <h3>Vehicles by area</h3>
-                    <p>Monitored road segments</p>
+                    <p>Current vehicles per hour</p>
                   </div>
+
                   <span className="chart-icon">⌖</span>
                 </div>
 
@@ -365,15 +564,22 @@ function App() {
                         <span>{area}</span>
                         <strong>{vehicles.toLocaleString()}</strong>
                       </div>
+
                       <div className="area-track">
-                        <span style={{ width: `${(vehicles / areaStats[0].vehicles) * 100}%` }} />
+                        <span
+                          style={{
+                            width: `${areaStats[0]?.vehicles
+                              ? (vehicles / areaStats[0].vehicles) * 100
+                              : 0}%`,
+                          }}
+                        />
                       </div>
                     </div>
                   ))}
                 </div>
 
                 <div className="area-total">
-                  <span>Total monitored vehicles</span>
+                  <span>Total vehicles per hour</span>
                   <strong>{totalVehicles.toLocaleString()}</strong>
                 </div>
               </div>
@@ -386,13 +592,14 @@ function App() {
                     <h3>Traffic flow overview</h3>
                     <p>Illustrative road congestion by area</p>
                   </div>
-                  <span className="small-tag">DEMO DATA</span>
+
+                  <span className="small-tag">DEMO MAP</span>
                 </div>
 
                 <div
                   className="traffic-map"
                   role="img"
-                  aria-label="Illustrative map of traffic congestion around Bole, Meskel Square, Mexico Square, and CMC"
+                  aria-label="Illustrative map of traffic congestion"
                 >
                   <div className="map-grid" />
                   <div className="map-road road-one"><span /></div>
@@ -408,8 +615,10 @@ function App() {
                   <div className="map-pin pin-two moderate-pin"><span>!</span></div>
                   <div className="map-pin pin-three clear-pin"><span>✓</span></div>
                   <div className="map-pin pin-four heavy-pin"><span>!</span></div>
+
                   <div className="map-caption">
-                    <span className="pulse-dot" /> Illustrative traffic map
+                    <span className="pulse-dot" />
+                    Illustrative traffic map
                   </div>
                 </div>
 
@@ -424,37 +633,47 @@ function App() {
                 <div className="panel-heading">
                   <div>
                     <h3>Signal monitoring</h3>
-                    <p>Intersection status overview</p>
+                    <p>Backend intersection status</p>
                   </div>
-                  <button className="text-button" onClick={() => selectPage('signals')}>
+
+                  <button
+                    className="text-button"
+                    onClick={() => selectPage('signals')}
+                  >
                     View all →
                   </button>
                 </div>
 
                 <div className="signal-list">
-                  {signals.map((signal) => (
+                  {signals.slice(0, 4).map((signal) => (
                     <div className="signal-row" key={signal.id}>
-                      <div className={`traffic-light light-${signal.state.toLowerCase()}`} aria-hidden="true">
-                        <i /><i /><i />
-                      </div>
+                      <SignalLight state={signal.state} />
+
                       <div className="signal-info">
                         <strong>{signal.location}</strong>
-                        <span>Cycle: {signal.duration}</span>
+                        <span>
+                          Waiting time: {signal.duration}
+                        </span>
                       </div>
-                      <span className={`state-badge state-${signal.state.toLowerCase()}`}>
-                        {signal.state}
-                      </span>
+
+                      <SignalBadge state={signal.state} />
                     </div>
                   ))}
                 </div>
 
                 <div className="panel-footer">
-                  <span><span className="pulse-dot" /> Signal statuses are simulated</span>
+                  <span>
+                    <span className="pulse-dot" />
+                    Signal phases from backend data
+                  </span>
                 </div>
               </div>
             </section>
 
-            <RoadTable {...roadTableProps} onViewAll={() => selectPage('traffic')} />
+            <RoadTable
+              {...roadTableProps}
+              onViewAll={() => selectPage('traffic')}
+            />
           </>
         )}
 
@@ -463,10 +682,16 @@ function App() {
             <div className="page-intro">
               <div>
                 <h2>Traffic monitoring</h2>
-                <p>Search road segments and inspect sample traffic conditions.</p>
+                <p>
+                  Monitor intersection traffic conditions from the backend.
+                </p>
               </div>
-              <span className="small-tag">{roads.length} ROAD SEGMENTS</span>
+
+              <span className="small-tag">
+                {roads.length} INTERSECTIONS
+              </span>
             </div>
+
             <RoadTable {...roadTableProps} />
           </section>
         )}
@@ -476,9 +701,14 @@ function App() {
             <div className="page-intro">
               <div>
                 <h2>Traffic signals</h2>
-                <p>Sample intersection status. No live signal controls are connected.</p>
+                <p>
+                  Inspect current signal phases and operating modes.
+                </p>
               </div>
-              <span className="small-tag">{signals.length} INTERSECTIONS</span>
+
+              <span className="small-tag">
+                {signals.length} INTERSECTIONS
+              </span>
             </div>
 
             <div className="signal-cards">
@@ -486,24 +716,23 @@ function App() {
                 <div className="panel signal-card" key={signal.id}>
                   <div className="signal-card-heading">
                     <span className="signal-card-icon">◉</span>
-                    <span className={`state-badge state-${signal.state.toLowerCase()}`}>
-                      {signal.state}
+                    <SignalBadge state={signal.state} />
+                  </div>
+
+                  <h3>{signal.location}</h3>
+
+                  <p>Waiting time: {signal.duration}</p>
+
+                  <div className="signal-card-light">
+                    <SignalLight state={signal.state} />
+                    <span>
+                      Signal mode: {signal.mode}
                     </span>
                   </div>
-                  <h3>{signal.location}</h3>
-                  <p>Sample signal cycle: {signal.duration}</p>
-                  <div className="signal-card-light">
-                    <div className={`traffic-light light-${signal.state.toLowerCase()}`} aria-hidden="true">
-                      <i /><i /><i />
-                    </div>
-                    <span>Simulated status</span>
-                  </div>
-                  <button
-                    className="secondary-button"
-                    onClick={() => showNotice(`Demo only: ${signal.location} was not changed.`)}
-                  >
-                    Test demo control
-                  </button>
+
+                  <span className="small-tag">
+                    {signal.mode.toUpperCase()} MODE
+                  </span>
                 </div>
               ))}
             </div>
@@ -515,23 +744,44 @@ function App() {
             <div className="page-intro">
               <div>
                 <h2>Traffic reports</h2>
-                <p>Export the current sample road data as a CSV file.</p>
+                <p>
+                  Export the current intersection data from the backend.
+                </p>
               </div>
             </div>
 
             <div className="panel report-panel">
               <div className="report-icon">▤</div>
+
               <h3>Road traffic summary</h3>
+
               <p>
-                Includes road name, area, vehicle count, average speed,
-                congestion level, and signal status.
+                Includes intersection name, area, hourly vehicle count,
+                daily vehicle count, average speed, congestion,
+                signal phase, operating mode, and waiting time.
               </p>
+
               <div className="report-summary">
-                <span>Road segments <strong>{roads.length}</strong></span>
-                <span>Vehicles monitored <strong>{totalVehicles.toLocaleString()}</strong></span>
-                <span>Heavy congestion <strong>{congestedRoads}</strong></span>
+                <span>
+                  Intersections
+                  <strong>{roads.length}</strong>
+                </span>
+
+                <span>
+                  Vehicles per hour
+                  <strong>{totalVehicles.toLocaleString()}</strong>
+                </span>
+
+                <span>
+                  Heavy congestion
+                  <strong>{congestedRoads}</strong>
+                </span>
               </div>
-              <button className="primary-button" onClick={exportReport}>
+
+              <button
+                className="primary-button"
+                onClick={exportReport}
+              >
                 ⇩ Download CSV report
               </button>
             </div>
@@ -539,11 +789,45 @@ function App() {
         )}
 
         <footer className="footer">
-          <span>TrafficFlow <span className="footer-dot">●</span> Smart City Traffic System</span>
-          <span>Prototype dashboard · Sample data only</span>
+          <span>
+            TrafficFlow <span className="footer-dot">●</span>
+            Smart City Traffic System
+          </span>
+
+          <span>
+            Backend connected · {dataMode} data
+          </span>
         </footer>
       </main>
     </div>
+  )
+}
+
+function SignalLight({ state }) {
+  const normalized = String(state).toLowerCase()
+
+  return (
+    <div
+      className={`traffic-light light-${normalized}`}
+      aria-label={`Signal ${state}`}
+    >
+      <i /><i /><i />
+    </div>
+  )
+}
+
+function SignalBadge({ state }) {
+  const normalized = String(state).toLowerCase()
+  const supported = ['green', 'red', 'yellow'].includes(normalized)
+
+  return (
+    <span
+      className={`state-badge ${
+        supported ? `state-${normalized}` : ''
+      }`}
+    >
+      {state}
+    </span>
   )
 }
 
@@ -554,10 +838,16 @@ function StatCard({ title, value, unit, icon, color, note }) {
         <span className={`stat-icon ${color}`}>{icon}</span>
         <span className="stat-menu" aria-hidden="true">•••</span>
       </div>
+
       <p className="stat-title">{title}</p>
-      <div className="stat-value">{value}<span>{unit}</span></div>
+
+      <div className="stat-value">
+        {value}<span>{unit}</span>
+      </div>
+
       <div className="stat-note">
-        <span className={`note-mark ${color}`}>↗</span>{note}
+        <span className={`note-mark ${color}`}>↗</span>
+        {note}
       </div>
     </article>
   )
@@ -588,7 +878,13 @@ function TrafficChart({ series }) {
         aria-label={`Illustrative vehicle activity for ${series.labels.join(', ')}`}
       >
         <defs>
-          <linearGradient id="chartFill" x1="0" x2="0" y1="0" y2="1">
+          <linearGradient
+            id="chartFill"
+            x1="0"
+            x2="0"
+            y1="0"
+            y2="1"
+          >
             <stop offset="0%" stopColor="#4279ee" stopOpacity=".2" />
             <stop offset="100%" stopColor="#4279ee" stopOpacity="0" />
           </linearGradient>
@@ -625,7 +921,9 @@ function TrafficChart({ series }) {
       </svg>
 
       <div className="chart-labels">
-        {series.labels.map((label) => <span key={label}>{label}</span>)}
+        {series.labels.map((label) => (
+          <span key={label}>{label}</span>
+        ))}
       </div>
     </div>
   )
@@ -647,6 +945,7 @@ function RoadTable({
   onSort,
   onClearFilters,
   onViewAll,
+  loading,
 }) {
   const hasFilters =
     search.trim() !== '' ||
@@ -655,9 +954,15 @@ function RoadTable({
     signalFilter !== 'All'
 
   function renderSortHeading(label, key) {
-    const direction = sortConfig?.key === key ? sortConfig.direction : null
+    const direction =
+      sortConfig?.key === key ? sortConfig.direction : null
+
     const indicator =
-      direction === 'asc' ? '▲' : direction === 'desc' ? '▼' : '↕'
+      direction === 'asc'
+        ? '▲'
+        : direction === 'desc'
+          ? '▼'
+          : '↕'
 
     const accessibleDirection =
       direction === 'asc'
@@ -693,8 +998,9 @@ function RoadTable({
       <div className="panel-heading roads-heading">
         <div>
           <h3>Road traffic status</h3>
-          <p>Vehicle activity and congestion by road segment</p>
+          <p>Vehicle activity and congestion by intersection</p>
         </div>
+
         {onViewAll && (
           <button className="text-button" onClick={onViewAll}>
             View all roads →
@@ -705,6 +1011,7 @@ function RoadTable({
       <div className="table-tools">
         <label className="search-box">
           <span aria-hidden="true">⌕</span>
+
           <input
             type="search"
             value={search}
@@ -717,6 +1024,7 @@ function RoadTable({
         <div className="filter-controls">
           <label className="filter-box">
             <span>Congestion</span>
+
             <select
               value={filter}
               onChange={(event) => setFilter(event.target.value)}
@@ -731,26 +1039,32 @@ function RoadTable({
 
           <label className="filter-box">
             <span>Area</span>
+
             <select
               value={areaFilter}
               onChange={(event) => setAreaFilter(event.target.value)}
               aria-label="Filter by area"
             >
               <option>All</option>
-              {areaOptions.map((area) => <option key={area}>{area}</option>)}
+
+              {areaOptions.map((area) => (
+                <option key={area}>{area}</option>
+              ))}
             </select>
           </label>
 
           <label className="filter-box">
             <span>Signal</span>
+
             <select
               value={signalFilter}
               onChange={(event) => setSignalFilter(event.target.value)}
-              aria-label="Filter by signal status"
+              aria-label="Filter by signal phase"
             >
               <option>All</option>
-              <option>Active</option>
-              <option>Maintenance</option>
+              <option>Red</option>
+              <option>Yellow</option>
+              <option>Green</option>
             </select>
           </label>
 
@@ -771,54 +1085,84 @@ function RoadTable({
           <thead>
             <tr>
               {renderSortHeading('Road / area', 'name')}
-              {renderSortHeading('Vehicles', 'vehicles')}
+              {renderSortHeading('Vehicles / hour', 'vehicles')}
               {renderSortHeading('Avg. speed', 'speed')}
               {renderSortHeading('Congestion', 'level')}
-              {renderSortHeading('Signal', 'signal')}
+              {renderSortHeading('Signal phase', 'signal')}
             </tr>
           </thead>
 
           <tbody>
+            {loading && roads.length === 0 && (
+              <tr>
+                <td colSpan="5" className="empty-state">
+                  Connecting to traffic backend...
+                </td>
+              </tr>
+            )}
+
             {roads.map((road) => (
               <tr key={road.id}>
                 <td>
                   <strong>{road.name}</strong>
                   <span className="cell-subtitle">{road.area}</span>
                 </td>
+
                 <td>{road.vehicles.toLocaleString()}</td>
-                <td>{road.speed} <span className="cell-unit">km/h</span></td>
+
                 <td>
-                  <span className={`congestion-badge congestion-${road.level.toLowerCase()}`}>
+                  {road.speed} <span className="cell-unit">km/h</span>
+                </td>
+
+                <td>
+                  <span
+                    className={`congestion-badge congestion-${road.level.toLowerCase()}`}
+                  >
                     <i />{road.level}
                   </span>
                 </td>
+
                 <td>
-                  <span className={`signal-status ${road.signal === 'Active' ? 'signal-on' : 'signal-maintenance'}`}>
+                  <span
+                    className={`signal-status ${
+                      road.signal === 'Green'
+                        ? 'signal-on'
+                        : 'signal-maintenance'
+                    }`}
+                  >
                     <i />{road.signal}
                   </span>
                 </td>
               </tr>
             ))}
 
-            {roads.length === 0 && (
+            {!loading && roads.length === 0 && (
               <tr>
                 <td colSpan="5" className="empty-state">
-                  No roads match your search. Try a different term or filter.
+                  No intersection data is available.
                 </td>
               </tr>
             )}
+
+            {roads.length > 0 && filteredRoadsEmpty(roads, totalRoads) && null}
           </tbody>
         </table>
       </div>
 
       <div className="table-bottom">
         <span>
-          Showing <strong>{roads.length}</strong> of <strong>{totalRoads}</strong> road segments
+          Showing <strong>{roads.length}</strong> of{' '}
+          <strong>{totalRoads}</strong> road segments
         </span>
-        <span>Demo data only</span>
+
+        <span>Backend data</span>
       </div>
     </section>
   )
+}
+
+function filteredRoadsEmpty(roads, totalRoads) {
+  return roads.length === 0 && totalRoads > 0
 }
 
 export default App

@@ -69,8 +69,19 @@ function CityMap({ intersections, onSelect, selectedId }: CityMapProps) {
           <text x="415" y="18" className="map-label">BOLE</text>
           <text x="353" y="318" className="map-label">YEKA</text>
           {intersections.map((intersection) => {
-            const x = intersection.longitude * 520 + 20;
-            const y = intersection.latitude * 300 + 14;
+           const longitudes = intersections.map((item) => item.longitude);
+const latitudes = intersections.map((item) => item.latitude);
+
+const minLongitude = Math.min(...longitudes);
+const maxLongitude = Math.max(...longitudes);
+const minLatitude = Math.min(...latitudes);
+const maxLatitude = Math.max(...latitudes);
+
+const x = 45 + ((intersection.longitude - minLongitude) /
+  (maxLongitude - minLongitude || 1)) * 470;
+
+const y = 35 + ((maxLatitude - intersection.latitude) /
+  (maxLatitude - minLatitude || 1)) * 270;
             const selected = selectedId === intersection.id;
             const tone = intersection.congestion === "Severe" || intersection.congestion === "Heavy"
               ? "map-marker-warning" : "map-marker-clear";

@@ -29,14 +29,70 @@ export interface Incident {
 }
 
 const seedIntersections: Omit<Intersection, "mode">[] = [
-  { id: "j-01", name: "Bole Road", district: "Bole", latitude: 0.48, longitude: 0.39, dailyVehicles: 28400 },
-  { id: "j-02", name: "Mexico Square", district: "Kirkos", latitude: 0.64, longitude: 0.27, dailyVehicles: 21900 },
-  { id: "j-03", name: "Meskel Square", district: "Kirkos", latitude: 0.32, longitude: 0.55, dailyVehicles: 17200 },
-  { id: "j-04", name: "CMC Road", district: "Yeka", latitude: 0.77, longitude: 0.47, dailyVehicles: 24100 },
-  { id: "j-05", name: "Piassa Road", district: "Arada", latitude: 0.19, longitude: 0.3, dailyVehicles: 14600 },
-  { id: "j-06", name: "Africa Avenue", district: "Bole", latitude: 0.49, longitude: 0.7, dailyVehicles: 19800 },
-  { id: "j-07", name: "Churchill Avenue", district: "Arada", latitude: 0.82, longitude: 0.69, dailyVehicles: 16600 },
-  { id: "j-08", name: "Kazanchis", district: "Kirkos", latitude: 0.36, longitude: 0.23, dailyVehicles: 23100 },
+  {
+    id: "j-01",
+    name: "Bole Road",
+    district: "Bole",
+    latitude: 8.992525,
+    longitude: 38.778964,
+    dailyVehicles: 28400,
+  },
+  {
+    id: "j-02",
+    name: "Mexico Square",
+    district: "Kirkos",
+    latitude: 9.010223,
+    longitude: 38.744509,
+    dailyVehicles: 21900,
+  },
+  {
+    id: "j-03",
+    name: "Meskel Square",
+    district: "Kirkos",
+    latitude: 9.010630,
+    longitude: 38.761270,
+    dailyVehicles: 17200,
+  },
+  {
+    id: "j-04",
+    name: "CMC Road",
+    district: "Yeka",
+    latitude: 9.019770,
+    longitude: 38.847580,
+    dailyVehicles: 24100,
+  },
+  {
+    id: "j-05",
+    name: "Piassa Road",
+    district: "Arada",
+    latitude: 9.033698,
+    longitude: 38.754754,
+    dailyVehicles: 14600,
+  },
+  {
+    id: "j-06",
+    name: "Africa Avenue",
+    district: "Bole",
+    latitude: 9.007040,
+    longitude: 38.766400,
+    dailyVehicles: 19800,
+  },
+  {
+    id: "j-07",
+    name: "Churchill Avenue",
+    district: "Arada",
+    latitude: 9.031537,
+    longitude: 38.751292,
+    dailyVehicles: 16600,
+  },
+  {
+    id: "j-08",
+    name: "Kazanchis",
+    district: "Kirkos",
+    latitude: 9.015928,
+    longitude: 38.771222,
+    dailyVehicles: 23100,
+  },
 ];
 
 const legacyIntersectionNames = [
@@ -55,6 +111,7 @@ const databasePath = resolve(
 );
 
 mkdirSync(dirname(databasePath), { recursive: true });
+
 export const database = new DatabaseSync(databasePath);
 
 database.exec(`
@@ -100,6 +157,7 @@ database.exec(`
 
   CREATE INDEX IF NOT EXISTS incidents_status_severity_reported_at
     ON incidents (status, severity, reported_at DESC);
+
   CREATE INDEX IF NOT EXISTS traffic_history_intersection_recorded_at
     ON traffic_history (intersection_id, recorded_at DESC, id DESC);
 `);
@@ -120,6 +178,9 @@ for (const intersection of seedIntersections) {
     intersection.dailyVehicles,
   );
 }
+
+// Update coordinates for existing database records.
+// This preserves existing incidents, signal modes, and traffic history.
 const updateIntersectionCoordinates = database.prepare(`
   UPDATE intersections
   SET latitude = ?, longitude = ?
@@ -137,12 +198,18 @@ for (const intersection of seedIntersections) {
 const storedIntersections = database.prepare(
   "SELECT id, name FROM intersections",
 ).all() as Array<{ id: string; name: string }>;
+
 const intersectionsToRename = legacyIntersectionNames.filter((legacy) =>
-  storedIntersections.some((stored) => stored.id === legacy.id && stored.name === legacy.oldName),
+  storedIntersections.some(
+    (stored) => stored.id === legacy.id && stored.name === legacy.oldName,
+  ),
 );
 
 if (intersectionsToRename.length > 0) {
-  const backupPath = `${databasePath}.pre-addis-${new Date().toISOString().replace(/[:.]/g, "-")}.sqlite`;
+  const backupPath = `${databasePath}.pre-addis-${new Date()
+    .toISOString()
+    .replace(/[:.]/g, "-")}.sqlite`;
+
   database.exec(`VACUUM INTO '${backupPath.replace(/'/g, "''")}'`);
 
   const updateIntersection = database.prepare(`
@@ -150,12 +217,15 @@ if (intersectionsToRename.length > 0) {
     SET name = ?, district = ?, daily_vehicles = ?
     WHERE id = ? AND name = ?
   `);
+
   const updateIncidentLocation = database.prepare(`
-    UPDATE incidents SET location = ?
+    UPDATE incidents
+    SET location = ?
     WHERE intersection_id = ? AND location = ?
   `);
 
   database.exec("BEGIN IMMEDIATE");
+
   try {
     for (const intersection of intersectionsToRename) {
       updateIntersection.run(
@@ -165,8 +235,14 @@ if (intersectionsToRename.length > 0) {
         intersection.id,
         intersection.oldName,
       );
-      updateIncidentLocation.run(intersection.name, intersection.id, intersection.oldName);
+
+      updateIncidentLocation.run(
+        intersection.name,
+        intersection.id,
+        intersection.oldName,
+      );
     }
+
     database.exec("COMMIT");
   } catch (error) {
     database.exec("ROLLBACK");
@@ -219,8 +295,13 @@ if (incidentCount.count === 0) {
 export function listIntersections(): Intersection[] {
   return database.prepare(`
     SELECT
-      id, name, district, latitude, longitude,
-      daily_vehicles AS dailyVehicles, mode
+      id,
+      name,
+      district,
+      latitude,
+      longitude,
+      daily_vehicles AS dailyVehicles,
+      mode
     FROM intersections
     ORDER BY district, name
   `).all() as unknown as Intersection[];
@@ -229,8 +310,13 @@ export function listIntersections(): Intersection[] {
 export function getIntersection(id: string): Intersection | undefined {
   return database.prepare(`
     SELECT
-      id, name, district, latitude, longitude,
-      daily_vehicles AS dailyVehicles, mode
+      id,
+      name,
+      district,
+      latitude,
+      longitude,
+      daily_vehicles AS dailyVehicles,
+      mode
     FROM intersections
     WHERE id = ?
   `).get(id) as Intersection | undefined;
@@ -241,7 +327,10 @@ export function listIncidents(): Incident[] {
     SELECT
       id,
       intersection_id AS intersectionId,
-      location, type, severity, status,
+      location,
+      type,
+      severity,
+      status,
       description,
       reported_at AS reportedAt
     FROM incidents
@@ -290,7 +379,10 @@ export function addIncident(
     SELECT
       id,
       intersection_id AS intersectionId,
-      location, type, severity, status,
+      location,
+      type,
+      severity,
+      status,
       description,
       reported_at AS reportedAt
     FROM incidents
@@ -325,13 +417,17 @@ export function getIncident(id: number): Incident | undefined {
     SELECT
       id,
       intersection_id AS intersectionId,
-      location, type, severity, status,
+      location,
+      type,
+      severity,
+      status,
       description,
       reported_at AS reportedAt
     FROM incidents
     WHERE id = ?
   `).get(id) as Incident | undefined;
 }
+
 export interface TrafficHistoryRecord {
   id: number;
   intersectionId: string;
@@ -343,7 +439,9 @@ export interface TrafficHistoryRecord {
   recordedAt: string;
 }
 
-export function recordTrafficReading(input: Omit<TrafficHistoryRecord, "id" | "recordedAt">): void {
+export function recordTrafficReading(
+  input: Omit<TrafficHistoryRecord, "id" | "recordedAt">,
+): void {
   database.prepare(`
     INSERT INTO traffic_history (
       intersection_id,
@@ -422,6 +520,7 @@ export function recordTrafficReadings(
   `);
 
   database.exec("BEGIN IMMEDIATE");
+
   try {
     for (const reading of readings) {
       insert.run(
@@ -437,6 +536,7 @@ export function recordTrafficReadings(
     database.prepare(
       "DELETE FROM traffic_history WHERE recorded_at < datetime('now', '-30 days')",
     ).run();
+
     database.exec("COMMIT");
   } catch (error) {
     database.exec("ROLLBACK");

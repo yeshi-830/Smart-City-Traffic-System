@@ -34,8 +34,8 @@ function CityMap({ intersections, onSelect, selectedId }: CityMapProps) {
           onClick={() => setLayersEnabled(!layersEnabled)}
         ><Layers2 size={16} /></button>
       </div>
-      <div className="city-map" aria-label="Illustrative Addis Ababa traffic network schematic">
-        <svg viewBox="0 0 560 340" role="img">
+      <div className="city-map">
+        <svg viewBox="0 0 560 340" role="group" aria-label="Illustrative Addis Ababa traffic network. Select an intersection marker to view its details.">
           <defs>
             <pattern id="map-grid" width="19" height="19" patternUnits="userSpaceOnUse">
               <path d="M 19 0 L 0 0 0 19" fill="none" stroke="#dde5df" strokeWidth="0.7" />
@@ -83,7 +83,10 @@ function CityMap({ intersections, onSelect, selectedId }: CityMapProps) {
                 aria-label={`${intersection.name}, ${intersection.congestion} traffic. View details.`}
                 onClick={() => onSelect(intersection.id)}
                 onKeyDown={(event) => {
-                  if (event.key === "Enter" || event.key === " ") onSelect(intersection.id);
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    onSelect(intersection.id);
+                  }
                 }}
               >
                 <circle cx={x} cy={y} r={selected ? 20 : 15} className={`${tone} map-marker-halo`} opacity={selected ? ".25" : ".15"} />

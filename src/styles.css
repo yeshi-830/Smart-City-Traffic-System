@@ -163,6 +163,8 @@ h1, h2, p { margin: 0; }
 .city-map svg { display: block; width: 100%; height: auto; max-height: 329px; }
 .map-label { fill: #8d9e92; font-size: 8px; font-weight: 700; letter-spacing: 1.1px; opacity: .88; }
 .map-marker { cursor: pointer; outline: none; }
+.map-marker:focus-visible .map-marker-body { stroke: #174f38; stroke-width: 3; }
+html[data-theme="dark"] .map-marker:focus-visible .map-marker-body { stroke: #d1f6dc; }
 .map-marker-halo, .map-marker-body { transition: r .18s, opacity .18s; }
 .map-marker-clear { fill: #39a27c; }
 .map-marker-warning { fill: #e0a253; }

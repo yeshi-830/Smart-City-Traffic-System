@@ -13,15 +13,12 @@ import {
   ArrowRight,
   ArrowUpRight,
   Bell,
-  Download,
   CarFront,
   Check,
   ChevronDown,
   CircleHelp,
   Clock3,
-  CloudSun,
-  Construction,
-  Crosshair,
+  Download,
   Gauge,
   MapPin,
   Menu,
@@ -32,12 +29,12 @@ import {
   ShieldCheck,
   Signal,
   Siren,
-  SlidersHorizontal,
-  Sparkles,
   Sun,
   TrendingUp,
   X,
   Zap,
+  Construction,
+  Filter,
 } from "lucide-react";
 
 import CityMap from "./components/CityMap";
@@ -49,274 +46,418 @@ import type {
   IncidentSeverity,
   IncidentStatus,
   Intersection,
-  TrafficRecommendation,
 } from "./types";
 
-/* -------------------------------------------------------
-   CONFIGURATION
-------------------------------------------------------- */
-
-const severityOptions: IncidentSeverity[] = [
-  "low",
-  "medium",
-  "high",
-  "critical",
-];
-
-const emptyIntersections: Intersection[] = [];
-
-const communityProblemTypes = [
-  "Road damage",
-  "Drainage or flooding",
-  "Pedestrian safety",
-  "Traffic or transport problem",
-  "Road obstruction",
-  "Street lighting",
-  "Other",
-];
-
 type Theme = "light" | "dark";
-type Panel = "help" | "notifications" | null;
-type IntersectionFilter = "all" | "congested" | "clear";
-type IntersectionSort = "priority" | "speed" | "name";
-type DashboardSection =
+type Page =
   | "overview"
-  | "intersections"
   | "incidents"
-  | "insights";
+  | "monitoring"
+  | "analytics";
 
-/* -------------------------------------------------------
-   API HELPER
-------------------------------------------------------- */
+const API_TIMEOUT = 12_000;
 
 async function api<T>(
   path: string,
   init?: RequestInit,
 ): Promise<T> {
-  const response = await fetch(path, {
-    ...init,
-    headers: {
-      "Content-Type": "application/json",
-      ...init?.headers,
-    },
-  });
+  const controller = new AbortController();
 
-  if (!response.ok) {
-    const body = (await response
-      .json()
-      .catch(() => null)) as { error?: string } | null;
+  const timeout = window.setTimeout(
+    () => controller.abort(),
+    API_TIMEOUT,
+  );
 
-    throw new Error(
-      body?.error ?? `Request failed (${response.status}).`,
-    );
+  try {
+    const response = await fetch(path, {
+      ...init,
+      signal: controller.signal,
+      headers: {
+        ...(init?.body
+          ? { "Content-Type": "application/json" }
+          : {}),
+        ...init?.headers,
+      },
+    });
+
+    if (!response.ok) {
+      const body = (await response.json().catch(() => null)) as
+        | { error?: string }
+        | null;
+
+      throw new Error(
+        body?.error ?? `Request failed (${response.status}).`,
+      );
+    }
+
+    return (await response.json()) as T;
+  } finally {
+    window.clearTimeout(timeout);
   }
-
-  return response.json() as Promise<T>;
 }
 
-/* -------------------------------------------------------
-   DATE AND TIME HELPERS
-------------------------------------------------------- */
+function formatNumber(value: number): string {
+  return new Intl.NumberFormat().format(value);
+}
 
 function formatTime(value: string): string {
   if (!value) return "Recently";
-
-  const hasTimezone =
-    /(?:Z|[+-]\d{2}:\d{2})$/i.test(value);
 
   const normalized = value.includes(" ")
     ? value.replace(" ", "T")
     : value;
 
+  const hasTimezone =
+    /(?:Z|[+-]\d{2}:\d{2})$/i.test(normalized);
+
   const date = new Date(
-    hasTimezone
-      ? normalized
-      : `${normalized}Z`,
+    hasTimezone ? normalized : `${normalized}Z`,
   );
 
   if (Number.isNaN(date.getTime())) {
     return "Recently";
   }
 
-  const difference = Date.now() - date.getTime();
-
-  if (difference < 0) return "Just now";
-
-  const minutes = Math.floor(difference / 60_000);
+  const minutes = Math.floor(
+    (Date.now() - date.getTime()) / 60_000,
+  );
 
   if (minutes < 1) return "Just now";
-
-  if (minutes < 60) {
-    return `${minutes} min ago`;
-  }
+  if (minutes < 60) return `${minutes} min ago`;
 
   const hours = Math.floor(minutes / 60);
 
-  if (hours < 24) {
-    return `${hours} hr ago`;
-  }
+  if (hours < 24) return `${hours} hr ago`;
 
   const days = Math.floor(hours / 24);
 
   return `${days} day${days === 1 ? "" : "s"} ago`;
 }
 
-function metricLabel(
-  congestion: Intersection["congestion"],
-): string {
-  return congestion.toLowerCase();
+function severityLabel(severity: IncidentSeverity): string {
+  return severity.charAt(0).toUpperCase() + severity.slice(1);
 }
 
-/* -------------------------------------------------------
-   DASHBOARD COMPARISON
-------------------------------------------------------- */
+function statusLabel(status: IncidentStatus): string {
+  if (status === "investigating") return "Investigating";
+  if (status === "resolved") return "Resolved";
+  return "Open";
+}
 
-function sameDashboardContent(
-  left: DashboardData,
-  right: DashboardData,
-): boolean {
-  const {
-    updatedAt: _leftUpdatedAt,
-    ...leftContent
-  } = left;
+function congestionClass(value: string): string {
+  return value.toLowerCase();
+}
 
-  const {
-    updatedAt: _rightUpdatedAt,
-    ...rightContent
-  } = right;
+function downloadCsv(
+  incidents: Incident[],
+): void {
+  const headers = [
+    "ID",
+    "Location",
+    "Type",
+    "Severity",
+    "Status",
+    "Description",
+    "Reported At",
+  ];
 
+  const escapeCsv = (value: unknown) =>
+    `"${String(value ?? "").replace(/"/g, '""')}"`;
+
+  const rows = incidents.map((incident) => [
+    incident.id,
+    incident.location,
+    incident.type,
+    incident.severity,
+    incident.status,
+    incident.description,
+    incident.reportedAt,
+  ]);
+
+  const csv = [
+    headers.map(escapeCsv).join(","),
+    ...rows.map((row) => row.map(escapeCsv).join(",")),
+  ].join("\n");
+
+  const blob = new Blob(
+    ["\uFEFF" + csv],
+    { type: "text/csv;charset=utf-8;" },
+  );
+
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+
+  anchor.href = url;
+  anchor.download = `aykel-connect-incidents-${new Date()
+    .toISOString()
+    .slice(0, 10)}.csv`;
+
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
+
+function MetricCard({
+  title,
+  value,
+  description,
+  icon: Icon,
+  trend,
+  tone = "green",
+}: {
+  title: string;
+  value: string | number;
+  description: string;
+  icon: typeof Activity;
+  trend?: string;
+  tone?: string;
+}) {
   return (
-    JSON.stringify(leftContent) ===
-    JSON.stringify(rightContent)
+    <article className="metric-card">
+      <div className="metric-top">
+        <span className="metric-label">{title}</span>
+        <span className={`metric-icon ${tone}`}>
+          <Icon size={19} />
+        </span>
+      </div>
+
+      <div className="metric-value">
+        {value}
+      </div>
+
+      <div className="metric-bottom">
+        <span className="metric-description">
+          {description}
+        </span>
+
+        {trend && (
+          <span className="metric-trend">
+            <TrendingUp size={13} />
+            {trend}
+          </span>
+        )}
+      </div>
+    </article>
   );
 }
 
-/* -------------------------------------------------------
-   MAIN APPLICATION
-------------------------------------------------------- */
+function IncidentRow({
+  incident,
+  onStatusChange,
+}: {
+  incident: Incident;
+  onStatusChange: (
+    id: number,
+    status: IncidentStatus,
+  ) => void;
+}) {
+  return (
+    <div className="incident-row">
+      <div className="incident-indicator">
+        <span className={`severity-dot ${incident.severity}`} />
+      </div>
 
-export default function App() {
-  /* THEME */
+      <div className="incident-main">
+        <div className="incident-title-line">
+          <strong>{incident.type}</strong>
 
-  const [theme, setTheme] = useState<Theme>(() => {
-    const savedTheme =
-      window.localStorage.getItem("aykel-connect-theme") ??
-      window.localStorage.getItem("flowcity-theme");
+          <span className={`severity-badge ${incident.severity}`}>
+            {severityLabel(incident.severity)}
+          </span>
+        </div>
 
-    if (
-      savedTheme === "light" ||
-      savedTheme === "dark"
-    ) {
-      return savedTheme;
-    }
+        <div className="incident-location">
+          <MapPin size={13} />
+          {incident.location}
+        </div>
 
-    return window.matchMedia(
-      "(prefers-color-scheme: dark)",
-    ).matches
-      ? "dark"
-      : "light";
-  });
+        {incident.description && (
+          <p className="incident-description">
+            {incident.description}
+          </p>
+        )}
 
-  /* DASHBOARD DATA */
+        <div className="incident-meta">
+          <span>
+            <Clock3 size={12} />
+            {formatTime(incident.reportedAt)}
+          </span>
 
+          <span className={`status-badge ${incident.status}`}>
+            {statusLabel(incident.status)}
+          </span>
+        </div>
+      </div>
+
+      <div className="incident-actions">
+        {incident.status !== "resolved" && (
+          <button
+            className="icon-button"
+            title={
+              incident.status === "open"
+                ? "Start investigation"
+                : "Resolve incident"
+            }
+            aria-label={
+              incident.status === "open"
+                ? "Start investigation"
+                : "Resolve incident"
+            }
+            onClick={() =>
+              onStatusChange(
+                incident.id,
+                incident.status === "open"
+                  ? "investigating"
+                  : "resolved",
+              )
+            }
+          >
+            {incident.status === "open"
+              ? <ArrowRight size={17} />
+              : <Check size={17} />}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function App() {
   const [dashboard, setDashboard] =
     useState<DashboardData | null>(null);
 
-  const [selectedId, setSelectedId] =
-    useState<string | null>(null);
-
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [liveConnected, setLiveConnected] = useState(false);
+  const [error, setError] = useState("");
 
-  const [focusedIncidentId, setFocusedIncidentId] =
+  const [theme, setTheme] = useState<Theme>(() => {
+    try {
+      const saved = localStorage.getItem("aykel-connect-theme");
+
+      return saved === "dark" ? "dark" : "light";
+    } catch {
+      return "light";
+    }
+  });
+
+  const [page, setPage] = useState<Page>("overview");
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
+  const [notificationsOpen, setNotificationsOpen] =
+    useState(false);
+
+  const [search, setSearch] = useState("");
+  const [severityFilter, setSeverityFilter] =
+    useState("all");
+
+  const [selectedIntersection, setSelectedIntersection] =
     useState<string | null>(null);
 
-  const [error, setError] = useState("");
-  const [search, setSearch] = useState("");
+  const [chartHours, setChartHours] =
+    useState<6 | 12>(6);
 
-  /* REPORT FORM */
+  const [now, setNow] = useState(new Date());
 
-  const [showIncidentForm, setShowIncidentForm] =
-    useState(false);
+  const [report, setReport] = useState({
+    location: "",
+    type: "Road damage",
+    severity: "medium" as IncidentSeverity,
+    description: "",
+    intersectionId: "",
+  });
 
-  const [formLocation, setFormLocation] = useState("");
-  const [saving, setSaving] = useState(false);
+  const [reporting, setReporting] = useState(false);
 
-  /* NOTIFICATIONS */
+  const [toast, setToast] = useState("");
 
-  const [notice, setNotice] = useState("");
-  const [noticeError, setNoticeError] = useState(false);
+  const showToast = useCallback((message: string) => {
+    setToast(message);
 
-  const [mobileNavOpen, setMobileNavOpen] =
-    useState(false);
+    window.setTimeout(() => {
+      setToast("");
+    }, 3500);
+  }, []);
 
-  const [openPanel, setOpenPanel] =
-    useState<Panel>(null);
+  const refresh = useCallback(async (
+    showLoading = false,
+  ) => {
+    if (showLoading) setRefreshing(true);
 
-  /* FILTERS */
+    try {
+      const data = await api<DashboardData>(
+        "/api/dashboard",
+      );
 
-  const [incidentSeverity, setIncidentSeverity] =
-    useState<"all" | IncidentSeverity>("all");
+      setDashboard(data);
+      setError("");
 
-  const [intersectionFilter, setIntersectionFilter] =
-    useState<IntersectionFilter>("all");
+      setSelectedIntersection((current) => {
+        if (
+          current &&
+          data.intersections.some((item) => item.id === current)
+        ) {
+          return current;
+        }
 
-  const [intersectionSort, setIntersectionSort] =
-    useState<IntersectionSort>("priority");
+        return data.intersections[0]?.id ?? null;
+      });
+    } catch (requestError) {
+      const message =
+        requestError instanceof Error
+          ? requestError.message
+          : "Unable to load dashboard.";
 
-  const [chartRange, setChartRange] =
-    useState<6 | 12>(12);
+      setError(message);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, []);
 
-  const [activeSection, setActiveSection] =
-    useState<DashboardSection>("overview");
+  useEffect(() => {
+    void refresh(true);
 
-  const [now, setNow] = useState(() => new Date());
+    const interval = window.setInterval(() => {
+      void refresh();
+    }, 30_000);
 
-  /* -------------------------------------------------------
-     THEME EFFECT
-  ------------------------------------------------------- */
+    return () => window.clearInterval(interval);
+  }, [refresh]);
+
+  useEffect(() => {
+    const source = new EventSource("/api/events");
+
+    source.onmessage = (event) => {
+      try {
+        const data = JSON.parse(
+          event.data,
+        ) as DashboardData;
+
+        setDashboard(data);
+        setError("");
+      } catch {
+        // Ignore malformed event messages.
+      }
+    };
+
+    source.onerror = () => {
+      // EventSource automatically attempts to reconnect.
+    };
+
+    return () => source.close();
+  }, []);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
-    document.documentElement.style.colorScheme = theme;
 
-    window.localStorage.setItem(
-      "aykel-connect-theme",
-      theme,
-    );
-  }, [theme]);
-
-  /* -------------------------------------------------------
-     ESCAPE KEY
-  ------------------------------------------------------- */
-
-  useEffect(() => {
-    if (!showIncidentForm && !openPanel) return;
-
-    function handleEscape(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        if (!saving) {
-          setShowIncidentForm(false);
-        }
-
-        setOpenPanel(null);
-      }
-    }
-
-    window.addEventListener("keydown", handleEscape);
-
-    return () => {
-      window.removeEventListener(
-        "keydown",
-        handleEscape,
+    try {
+      localStorage.setItem(
+        "aykel-connect-theme",
+        theme,
       );
-    };
-  }, [openPanel, showIncidentForm, saving]);
-
-  /* -------------------------------------------------------
-     CLOCK
-  ------------------------------------------------------- */
+    } catch {
+      // Theme still works for the current session.
+    }
+  }, [theme]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -326,2014 +467,1065 @@ export default function App() {
     return () => window.clearInterval(timer);
   }, []);
 
-  /* -------------------------------------------------------
-     ACTIVE SECTION TRACKING
-  ------------------------------------------------------- */
+  const intersections = dashboard?.intersections ?? [];
+  const incidents = dashboard?.incidents ?? [];
 
-  useEffect(() => {
-    const sectionIds: DashboardSection[] = [
-      "intersections",
-      "incidents",
-      "insights",
-    ];
-
-    const sections = sectionIds
-      .map((id) => document.getElementById(id))
-      .filter(
-        (section): section is HTMLElement =>
-          section !== null,
-      );
-
-    if (sections.length === 0) return;
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const current = entries
-          .filter((entry) => entry.isIntersecting)
-          .sort(
-            (left, right) =>
-              left.boundingClientRect.top -
-              right.boundingClientRect.top,
-          )[0];
-
-        const section =
-          current &&
-          sectionIds.find(
-            (id) => id === current.target.id,
-          );
-
-        if (section) {
-          setActiveSection(section);
-        } else if (window.scrollY < 240) {
-          setActiveSection("overview");
-        }
-      },
-      {
-        rootMargin: "-80px 0px -65% 0px",
-      },
-    );
-
-    sections.forEach((section) =>
-      observer.observe(section),
-    );
-
-    return () => observer.disconnect();
-  }, []);
-
-  /* -------------------------------------------------------
-     REFRESH DASHBOARD
-  ------------------------------------------------------- */
-
-  const refresh = useCallback(
-    async (quiet = false) => {
-      if (quiet) {
-        setRefreshing(true);
-      } else {
-        setLoading(true);
-      }
-
-      try {
-        const data = await api<DashboardData>(
-          "/api/dashboard",
-        );
-
-        setDashboard((current) =>
-          current &&
-          sameDashboardContent(current, data)
-            ? current
-            : data,
-        );
-
-        setError("");
-      } catch (cause) {
-        setError(
-          cause instanceof Error
-            ? cause.message
-            : "Unable to load dashboard data.",
-        );
-      } finally {
-        setLoading(false);
-        setRefreshing(false);
-      }
-    },
-    [],
+  const activeIncidents = incidents.filter(
+    (incident) => incident.status !== "resolved",
   );
 
-  /* -------------------------------------------------------
-     INITIAL LOAD AND LIVE EVENTS
-  ------------------------------------------------------- */
+  const filteredIntersections = useMemo(() => {
+    const query = search.trim().toLowerCase();
 
-  useEffect(() => {
-    void refresh();
+    return intersections.filter((item) => {
+      const matchesSearch =
+        !query ||
+        item.name.toLowerCase().includes(query) ||
+        item.district.toLowerCase().includes(query);
 
-    const stream = new EventSource("/api/events");
-
-    stream.onopen = () => {
-      setLiveConnected(true);
-    };
-
-    stream.onmessage = (event) => {
-      try {
-        const data = JSON.parse(
-          event.data,
-        ) as DashboardData;
-
-        setDashboard((current) =>
-          current &&
-          sameDashboardContent(current, data)
-            ? current
-            : data,
-        );
-
-        setError("");
-        setLoading(false);
-      } catch (cause) {
-        setError(
-          cause instanceof Error
-            ? `Invalid live dashboard update: ${cause.message}`
-            : "Invalid live dashboard update.",
-        );
-      }
-    };
-
-    stream.onerror = () => {
-      setLiveConnected(false);
-    };
-
-    return () => {
-      stream.close();
-    };
-  }, [refresh]);
-
-  /* -------------------------------------------------------
-     TOAST NOTIFICATION
-  ------------------------------------------------------- */
-
-  useEffect(() => {
-    if (!notice) return;
-
-    const timeout = window.setTimeout(() => {
-      setNotice("");
-    }, 4000);
-
-    return () => window.clearTimeout(timeout);
-  }, [notice]);
-
-  function announce(
-    message: string,
-    isError = false,
-  ) {
-    setNoticeError(isError);
-    setNotice(message);
-  }
-
-  /* -------------------------------------------------------
-     REPORT FORM OPENING
-  ------------------------------------------------------- */
-
-  function openIncidentForm() {
-    setFormLocation("");
-    setShowIncidentForm(true);
-  }
-
-  /* -------------------------------------------------------
-     DASHBOARD DERIVED DATA
-  ------------------------------------------------------- */
-
-  const selected =
-    dashboard?.intersections.find(
-      (item) => item.id === selectedId,
-    ) ?? null;
-
-  const activeIncidents = useMemo(
-    () =>
-      dashboard?.incidents.filter(
-        (item) => item.status !== "resolved",
-      ) ?? [],
-    [dashboard?.incidents],
-  );
-
-  const visibleIncidents = useMemo(
-    () =>
-      activeIncidents.filter(
-        (item) =>
-          incidentSeverity === "all" ||
-          item.severity === incidentSeverity,
-      ),
-    [activeIncidents, incidentSeverity],
-  );
-
-  const visibleTrend = useMemo(
-    () =>
-      (dashboard?.trend ?? []).slice(-chartRange),
-    [dashboard?.trend, chartRange],
-  );
-
-  const averageTrend = useMemo(
-    () =>
-      visibleTrend.length
-        ? Math.round(
-            visibleTrend.reduce(
-              (total, point) => total + point.volume,
-              0,
-            ) / visibleTrend.length,
-          )
-        : null,
-    [visibleTrend],
-  );
-
-  /* -------------------------------------------------------
-     COMMUNITY REPORT METRICS
-  ------------------------------------------------------- */
-
-  const totalReports =
-    dashboard?.incidents.length ?? 0;
-
-  const openReports =
-    dashboard?.incidents.filter(
-      (item) => item.status === "open",
-    ).length ?? 0;
-
-  const investigatingReports =
-    dashboard?.incidents.filter(
-      (item) => item.status === "investigating",
-    ).length ?? 0;
-
-  const resolvedReports =
-    dashboard?.incidents.filter(
-      (item) => item.status === "resolved",
-    ).length ?? 0;
-
-  const criticalReports =
-    dashboard?.incidents.filter(
-      (item) =>
-        item.severity === "critical" &&
-        item.status !== "resolved",
-    ).length ?? 0;
-
-  /* -------------------------------------------------------
-     INTERSECTION SEARCH, FILTER AND SORT
-  ------------------------------------------------------- */
-
-  const filtered = useMemo(() => {
-    if (!dashboard) return [];
-
-    const needle = search.trim().toLowerCase();
-
-    const matches = dashboard.intersections.filter(
-      (item) => {
-        const matchesSearch =
-          !needle ||
-          `${item.name} ${item.district}`
-            .toLowerCase()
-            .includes(needle);
-
-        const matchesTraffic =
-          intersectionFilter === "all" ||
-          (intersectionFilter === "congested" &&
-            (item.congestion === "Heavy" ||
-              item.congestion === "Severe")) ||
-          (intersectionFilter === "clear" &&
-            (item.congestion === "Clear" ||
-              item.congestion === "Moderate"));
-
-        return matchesSearch && matchesTraffic;
-      },
-    );
-
-    const congestionRank: Record<
-      Intersection["congestion"],
-      number
-    > = {
-      Severe: 0,
-      Heavy: 1,
-      Moderate: 2,
-      Clear: 3,
-    };
-
-    return matches.sort((left, right) => {
-      if (intersectionSort === "speed") {
-        return (
-          right.speed - left.speed ||
-          left.name.localeCompare(right.name)
-        );
-      }
-
-      if (intersectionSort === "name") {
-        return left.name.localeCompare(right.name);
-      }
-
-      return (
-        congestionRank[left.congestion] -
-          congestionRank[right.congestion] ||
-        left.speed - right.speed ||
-        left.name.localeCompare(right.name)
-      );
+      return matchesSearch;
     });
-  }, [
-    dashboard,
-    intersectionFilter,
-    intersectionSort,
-    search,
-  ]);
+  }, [intersections, search]);
 
-  /* -------------------------------------------------------
-     SELECT INTERSECTION
-  ------------------------------------------------------- */
+  const filteredIncidents = useMemo(() => {
+    const query = search.trim().toLowerCase();
 
-  const selectIntersection = useCallback(
-    (id: string) => {
-      setSelectedId(id);
+    return incidents.filter((incident) => {
+      const matchesSearch =
+        !query ||
+        incident.location.toLowerCase().includes(query) ||
+        incident.type.toLowerCase().includes(query) ||
+        incident.description.toLowerCase().includes(query);
 
-      window.setTimeout(() => {
-        document
-          .getElementById("intersections")
-          ?.scrollIntoView({
-            behavior: "smooth",
-            block: "center",
-          });
-      }, 40);
-    },
-    [],
+      const matchesSeverity =
+        severityFilter === "all" ||
+        incident.severity === severityFilter;
+
+      return matchesSearch && matchesSeverity;
+    });
+  }, [incidents, search, severityFilter]);
+
+  const selected = intersections.find(
+    (item) => item.id === selectedIntersection,
   );
 
-  /* -------------------------------------------------------
-     CSV EXPORT
-  ------------------------------------------------------- */
+  const trafficData = useMemo(() => {
+    const points = dashboard?.trend ?? [];
 
-  function exportDashboard() {
-    if (!dashboard) return;
-
-    const generatedAt = new Date().toISOString();
-
-    const headers = [
-      "record_type",
-      "generated_at",
-      "id",
-      "name_or_location",
-      "district",
-      "congestion",
-      "speed_mph",
-      "vehicles_per_hour",
-      "signal_mode",
-      "incident_type",
-      "severity",
-      "status",
-      "reported_at",
-      "description",
-    ];
-
-    const cell = (
-      value: string | number | null,
-    ) => {
-      const text =
-        value === null ? "" : String(value);
-
-      const safeText =
-        typeof value === "string" &&
-        /^[=+\-@\t\r]/.test(text)
-          ? `'${text}`
-          : text;
-
-      return `"${safeText.replace(/"/g, '""')}"`;
-    };
-
-    const rows = [
-      headers,
-
-      ...dashboard.intersections.map(
-        (intersection) => [
-          "sample_intersection",
-          generatedAt,
-          intersection.id,
-          intersection.name,
-          intersection.district,
-          intersection.congestion,
-          intersection.speed,
-          intersection.vehiclesPerHour,
-          intersection.mode,
-          "",
-          "",
-          "",
-          "",
-          "",
-        ],
-      ),
-
-      ...dashboard.incidents.map((incident) => [
-        "community_report",
-        generatedAt,
-        incident.id,
-        incident.location,
-        incident.intersectionId ?? "",
-        "",
-        "",
-        "",
-        "",
-        incident.type,
-        incident.severity,
-        incident.status,
-        incident.reportedAt,
-        incident.description,
-      ]),
-    ];
-
-    const csv = rows
-      .map((row) => row.map(cell).join(","))
-      .join("\r\n");
-
-    const url = URL.createObjectURL(
-      new Blob([`\uFEFF${csv}`], {
-        type: "text/csv;charset=utf-8",
-      }),
+    return points.slice(
+      Math.max(0, points.length - (chartHours === 6 ? 6 : 12)),
     );
-
-    const link = document.createElement("a");
-
-    link.href = url;
-    link.download =
-      `aykel-community-reports-${generatedAt.slice(0, 10)}.csv`;
-
-    link.click();
-
-    window.setTimeout(() => {
-      URL.revokeObjectURL(url);
-    }, 1000);
-
-    announce("Community report downloaded.");
-  }
-
-  /* -------------------------------------------------------
-     FOCUS INCIDENT
-  ------------------------------------------------------- */
-
-  function focusIncident(incident: Incident) {
-    setOpenPanel(null);
-    setIncidentSeverity("all");
-    setFocusedIncidentId(String(incident.id));
-
-    window.setTimeout(() => {
-      const row = document.getElementById(
-        `incident-${incident.id}`,
-      );
-
-      row?.scrollIntoView({
-        behavior: "smooth",
-        block: "center",
-      });
-
-      row?.focus();
-    }, 40);
-  }
-
-  /* -------------------------------------------------------
-     DEMO SIGNAL CONTROL
-  ------------------------------------------------------- */
-
-  async function changeSignalMode(
-    intersection: Intersection,
-  ) {
-    try {
-      await api<Intersection>(
-        `/api/intersections/${intersection.id}/optimize`,
-        {
-          method: "POST",
-        },
-      );
-
-      announce(
-        `Demo signal setting updated for ${intersection.name}.`,
-      );
-
-      await refresh(true);
-    } catch (cause) {
-      announce(
-        cause instanceof Error
-          ? cause.message
-          : "Could not update the demo signal setting.",
-        true,
-      );
-    }
-  }
-
-  /* -------------------------------------------------------
-     CHANGE COMMUNITY REPORT STATUS
-  ------------------------------------------------------- */
+  }, [dashboard, chartHours]);
 
   async function changeIncidentStatus(
-    incident: Incident,
+    id: number,
     status: IncidentStatus,
   ) {
     try {
       await api<Incident>(
-        `/api/incidents/${incident.id}/status`,
+        `/api/incidents/${id}/status`,
         {
           method: "PATCH",
           body: JSON.stringify({ status }),
         },
       );
 
-      announce(
-        status === "resolved"
-          ? "Community report marked as resolved."
-          : "Community report status updated.",
-      );
+      await refresh();
 
-      await refresh(true);
-    } catch (cause) {
-      announce(
-        cause instanceof Error
-          ? cause.message
-          : "Could not update report status.",
-        true,
+      showToast(
+        `Incident marked as ${statusLabel(status).toLowerCase()}.`,
+      );
+    } catch (requestError) {
+      showToast(
+        requestError instanceof Error
+          ? requestError.message
+          : "Unable to update incident.",
       );
     }
   }
-
-  /* -------------------------------------------------------
-     SUBMIT COMMUNITY REPORT
-  ------------------------------------------------------- */
 
   async function submitIncident(
     event: FormEvent<HTMLFormElement>,
   ) {
     event.preventDefault();
 
-    if (saving) return;
+    if (!report.location.trim()) {
+      showToast("Please enter the incident location.");
+      return;
+    }
 
-    setSaving(true);
+    if (!report.type.trim()) {
+      showToast("Please select an incident type.");
+      return;
+    }
 
-    const form = new FormData(event.currentTarget);
+    setReporting(true);
 
     try {
       await api<Incident>("/api/incidents", {
         method: "POST",
         body: JSON.stringify({
-          intersectionId: null,
-          location: String(
-            form.get("location") ?? "",
-          ).trim(),
-          type: String(form.get("type") ?? ""),
-          severity: String(
-            form.get("severity") ?? "medium",
-          ),
-          description: String(
-            form.get("description") ?? "",
-          ).trim(),
+          location: report.location.trim(),
+          type: report.type,
+          severity: report.severity,
+          description: report.description.trim(),
+          intersectionId: report.intersectionId || null,
         }),
       });
 
-      setShowIncidentForm(false);
-      setFormLocation("");
+      setReport({
+        location: "",
+        type: "Road damage",
+        severity: "medium",
+        description: "",
+        intersectionId: "",
+      });
 
-      announce(
-        "Community problem submitted successfully.",
-      );
+      setReportOpen(false);
 
-      await refresh(true);
-    } catch (cause) {
-      announce(
-        cause instanceof Error
-          ? cause.message
-          : "Could not submit the community report.",
-        true,
+      await refresh();
+
+      showToast("Your community report was submitted.");
+    } catch (requestError) {
+      showToast(
+        requestError instanceof Error
+          ? requestError.message
+          : "Unable to submit report.",
       );
     } finally {
-      setSaving(false);
+      setReporting(false);
     }
   }
 
-  /* -------------------------------------------------------
-     RECOMMENDATIONS
-  ------------------------------------------------------- */
-
-  function openRecommendation(
-    recommendation: TrafficRecommendation,
-  ) {
-    if (recommendation.kind === "incident") {
-      setIncidentSeverity("all");
-
-      setFocusedIncidentId(
-        recommendation.targetId,
+  async function toggleSignal(intersection: Intersection) {
+    try {
+      await api<Intersection>(
+        `/api/intersections/${intersection.id}/optimize`,
+        { method: "POST" },
       );
 
-      document
-        .getElementById("incidents")
-        ?.scrollIntoView({
-          behavior: "smooth",
-          block: "center",
-        });
+      await refresh();
 
-      window.setTimeout(() => {
-        const row = document.getElementById(
-          `incident-${recommendation.targetId}`,
-        );
-
-        row?.scrollIntoView({
-          behavior: "smooth",
-          block: "center",
-        });
-
-        row?.focus();
-      }, 250);
-
-      return;
+      showToast(
+        `${intersection.name}: signal mode updated in the demo.`,
+      );
+    } catch (requestError) {
+      showToast(
+        requestError instanceof Error
+          ? requestError.message
+          : "Unable to update signal mode.",
+      );
     }
-
-    setSelectedId(recommendation.targetId);
-
-    window.setTimeout(() => {
-      document
-        .getElementById("intersections")
-        ?.scrollIntoView({
-          behavior: "smooth",
-          block: "center",
-        });
-    }, 40);
   }
 
-  /* -------------------------------------------------------
-     DISPLAY VALUES
-  ------------------------------------------------------- */
+  function navigate(nextPage: Page) {
+    setPage(nextPage);
+    setMobileMenuOpen(false);
+    setSearch("");
+  }
 
-  const summary = dashboard?.summary;
+  const pageTitle = {
+    overview: "Community overview",
+    incidents: "Community reports",
+    monitoring: "Traffic monitoring",
+    analytics: "Traffic analytics",
+  }[page];
 
-  const timeDisplay = now.toLocaleTimeString(
-    "en-US",
+  const dateLabel = now.toLocaleDateString(
+    undefined,
     {
-      hour: "numeric",
-      minute: "2-digit",
+      weekday: "long",
+      day: "numeric",
+      month: "long",
+      year: "numeric",
     },
   );
 
-  const greeting =
-    now.getHours() < 12
-      ? "morning"
-      : now.getHours() < 17
-        ? "afternoon"
-        : "evening";
-
-  const dateDisplay = now
-    .toLocaleDateString("en-US", {
-      weekday: "long",
-      month: "long",
-      day: "numeric",
-    })
-    .toUpperCase();
-
-  /* -------------------------------------------------------
-     UI
-  ------------------------------------------------------- */
+  if (loading && !dashboard) {
+    return (
+      <div className="app-loading">
+        <div className="loading-logo">
+          <Activity size={28} />
+        </div>
+        <h2>Aykel Connect</h2>
+        <p>Connecting to community operations...</p>
+        <div className="loading-bar">
+          <span />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="app-shell">
-      {/* SIDEBAR */}
-
-      <aside
-        className={`sidebar${mobileNavOpen ? " mobile-open" : ""}`}
-      >
+      <aside className={`sidebar ${mobileMenuOpen ? "sidebar-open" : ""}`}>
         <div className="brand">
           <div className="brand-mark">
-            <Activity size={20} strokeWidth={2.5} />
+            <Activity size={23} />
           </div>
 
-          <div className="brand-name">
-            Aykel<span>Connect</span>
-            <small>COMMUNITY OPERATIONS</small>
+          <div className="brand-copy">
+            <strong>Aykel Connect</strong>
+            <span>COMMUNITY OPERATIONS</span>
           </div>
 
           <button
-            className="icon-button sidebar-close"
+            className="mobile-close icon-button"
+            onClick={() => setMobileMenuOpen(false)}
             aria-label="Close navigation"
-            onClick={() => setMobileNavOpen(false)}
           >
-            <X size={18} />
+            <X size={19} />
           </button>
         </div>
 
-        <div className="workspace-picker">
-          <div className="city-avatar">AK</div>
-
-          <div className="workspace-copy">
-            <strong>Aykel Town</strong>
-            <span>Community operations</span>
+        <div className="workspace-card">
+          <div className="workspace-icon">
+            <MapPin size={17} />
           </div>
 
-          <ChevronDown size={14} />
+          <div>
+            <strong>Aykel Town</strong>
+            <span>Community workspace</span>
+          </div>
+
+          <ChevronDown size={15} />
         </div>
 
-        <div className="nav-caption">WORKSPACE</div>
+        <div className="nav-section-label">
+          WORKSPACE
+        </div>
 
-        <nav
-          className="primary-nav"
-          aria-label="Main navigation"
-        >
-          <a
-            href="#overview"
-            className={`nav-link${activeSection === "overview" ? " active" : ""}`}
-            aria-current={
-              activeSection === "overview"
-                ? "page"
-                : undefined
-            }
-            onClick={() => {
-              setActiveSection("overview");
-              setMobileNavOpen(false);
-            }}
+        <nav className="navigation">
+          <button
+            className={`nav-link ${page === "overview" ? "active" : ""}`}
+            onClick={() => navigate("overview")}
           >
-            <Crosshair size={17} />
-            Overview
+            <Activity size={18} />
+            <span>Overview</span>
+          </button>
 
-            {activeSection === "overview" && (
-              <span className="nav-current-dot" />
-            )}
-          </a>
-
-          <a
-            href="#intersections"
-            className={`nav-link${activeSection === "intersections" ? " active" : ""}`}
-            aria-current={
-              activeSection === "intersections"
-                ? "location"
-                : undefined
-            }
-            onClick={() => {
-              setActiveSection("intersections");
-              setMobileNavOpen(false);
-            }}
+          <button
+            className={`nav-link ${page === "incidents" ? "active" : ""}`}
+            onClick={() => navigate("incidents")}
           >
-            <MapPin size={17} />
-            Sample traffic
+            <Siren size={18} />
+            <span>Community reports</span>
 
-            {activeSection === "intersections" && (
-              <span className="nav-current-dot" />
-            )}
-          </a>
-
-          <a
-            href="#incidents"
-            className={`nav-link${activeSection === "incidents" ? " active" : ""}`}
-            aria-current={
-              activeSection === "incidents"
-                ? "location"
-                : undefined
-            }
-            onClick={() => {
-              setActiveSection("incidents");
-              setMobileNavOpen(false);
-            }}
-          >
-            <Siren size={17} />
-            Community reports
-
-            {summary?.activeIncidents ? (
+            {activeIncidents.length > 0 && (
               <span className="nav-count">
-                {summary.activeIncidents}
+                {activeIncidents.length}
               </span>
-            ) : null}
-
-            {activeSection === "incidents" &&
-              !summary?.activeIncidents && (
-                <span className="nav-current-dot" />
-              )}
-          </a>
-
-          <a
-            href="#insights"
-            className={`nav-link${activeSection === "insights" ? " active" : ""}`}
-            aria-current={
-              activeSection === "insights"
-                ? "location"
-                : undefined
-            }
-            onClick={() => {
-              setActiveSection("insights");
-              setMobileNavOpen(false);
-            }}
-          >
-            <TrendingUp size={17} />
-            Traffic demo
-
-            {activeSection === "insights" && (
-              <span className="nav-current-dot" />
             )}
-          </a>
+          </button>
+
+          <button
+            className={`nav-link ${page === "monitoring" ? "active" : ""}`}
+            onClick={() => navigate("monitoring")}
+          >
+            <Signal size={18} />
+            <span>Traffic monitoring</span>
+          </button>
+
+          <button
+            className={`nav-link ${page === "analytics" ? "active" : ""}`}
+            onClick={() => navigate("analytics")}
+          >
+            <TrendingUp size={18} />
+            <span>Analytics</span>
+          </button>
         </nav>
 
         <div className="sidebar-bottom">
-          <div className="system-card">
-            <div className="system-card-heading">
-              <span
-                className={`system-online-dot${!liveConnected ? " status-offline" : ""}`}
-              />
-              LIVE SIMULATION
-              <span>DEMO</span>
-            </div>
-
-            <strong>
-              {error
-                ? "API connection unavailable"
-                : liveConnected
-                  ? "Live demo feed connected"
-                  : "Reconnecting to demo feed"}
-            </strong>
-
-            <div className="system-subline">
-              <span>Traffic readings</span>
-              <span className="data-source">
-                SIMULATED
-              </span>
+          <div className="sidebar-status">
+            <span className="connection-dot" />
+            <div>
+              <strong>System connected</strong>
+              <span>API connection status</span>
             </div>
           </div>
 
-          <div className="user-profile">
-            <div className="user-avatar">MY</div>
+          <button
+            className="nav-link"
+            onClick={() => showToast("Help center is not configured yet.")}
+          >
+            <CircleHelp size={18} />
+            <span>Help & support</span>
+          </button>
 
-            <div className="user-copy">
-              <strong>Mihiretu Yeshi</strong>
-              <span>Project operator</span>
+          <div className="profile-card">
+            <div className="profile-avatar">AC</div>
+            <div className="profile-info">
+              <strong>Community Admin</strong>
+              <span>Operations team</span>
             </div>
-
-            <button
-              className="icon-button help-button"
-              aria-label="Help"
-              onClick={() => setOpenPanel("help")}
-            >
-              <CircleHelp size={16} />
-            </button>
+            <ShieldCheck size={17} />
           </div>
         </div>
       </aside>
 
-      {/* MOBILE BACKDROP */}
-
-      {mobileNavOpen && (
+      {mobileMenuOpen && (
         <button
-          className="mobile-backdrop"
+          className="sidebar-overlay"
           aria-label="Close navigation"
-          onClick={() => setMobileNavOpen(false)}
+          onClick={() => setMobileMenuOpen(false)}
         />
       )}
 
-      {/* MAIN CONTENT */}
-
-      <main className="main-content" id="overview">
-        {/* TOP BAR */}
-
+      <main className="main-content">
         <header className="topbar">
-          <button
-            className="icon-button mobile-menu-button"
-            aria-label="Open navigation"
-            onClick={() => setMobileNavOpen(true)}
-          >
-            <Menu size={19} />
-          </button>
+          <div className="topbar-left">
+            <button
+              className="mobile-menu-button icon-button"
+              onClick={() => setMobileMenuOpen(true)}
+              aria-label="Open navigation"
+            >
+              <Menu size={20} />
+            </button>
 
-          <div className="breadcrumbs">
-            <span>Aykel Town</span>
-            <span>/</span>
-            <strong>Overview</strong>
+            <div>
+              <div className="breadcrumb">
+                Aykel Town <span>/</span> Operations
+              </div>
+              <h1>{pageTitle}</h1>
+            </div>
           </div>
 
-          <div className="topbar-right">
-            <div
-              className="weather-chip"
-              title="Sample weather — not a live forecast"
-            >
-              <CloudSun size={16} />
-              <strong>72°</strong>
-              <span>Sample conditions</span>
-              <i />
+          <div className="topbar-actions">
+            <div className="topbar-date">
+              <Clock3 size={15} />
+              {dateLabel}
             </div>
 
-            <div className="topbar-divider" />
-
-            <time
-              className="clock"
-              dateTime={now.toISOString()}
-            >
-              <Clock3 size={14} />
-              {timeDisplay}
-            </time>
-
             <button
-              className="icon-button theme-toggle"
-              aria-label={`Switch to ${theme === "light" ? "dark" : "light"} mode`}
-              title={`Switch to ${theme === "light" ? "dark" : "light"} mode`}
-              onClick={() =>
-                setTheme(
-                  theme === "light" ? "dark" : "light",
-                )
-              }
+              className="icon-button"
+              title="Refresh dashboard"
+              aria-label="Refresh dashboard"
+              disabled={refreshing}
+              onClick={() => void refresh(true)}
             >
-              {theme === "light" ? (
-                <Moon size={17} />
-              ) : (
-                <Sun size={17} />
-              )}
+              <RefreshCw
+                size={18}
+                className={refreshing ? "spin" : ""}
+              />
             </button>
 
             <button
               className="icon-button notification-button"
-              aria-label={`Notifications, ${activeIncidents.length} active reports`}
-              title="View active community reports"
-              onClick={() =>
-                setOpenPanel(
-                  openPanel === "notifications"
-                    ? null
-                    : "notifications",
-                )
-              }
-              aria-haspopup="dialog"
+              title="Notifications"
+              aria-label="Notifications"
+              onClick={() => setNotificationsOpen(!notificationsOpen)}
             >
-              <Bell size={17} />
-
-              {activeIncidents.length > 0 && <span />}
+              <Bell size={18} />
+              {activeIncidents.length > 0 && (
+                <span className="notification-dot" />
+              )}
             </button>
 
-            <div className="topbar-avatar">MY</div>
+            <button
+              className="icon-button"
+              title={`Switch to ${theme === "light" ? "dark" : "light"} mode`}
+              aria-label="Toggle theme"
+              onClick={() =>
+                setTheme(theme === "light" ? "dark" : "light")
+              }
+            >
+              {theme === "light"
+                ? <Moon size={18} />
+                : <Sun size={18} />}
+            </button>
           </div>
-        </header>
 
-        <div className="dashboard">
-          {/* PAGE HEADING */}
-
-          <div className="page-heading">
-            <div>
-              <div className="heading-kicker">
-                <span
-                  className={`live-pulse${liveConnected ? "" : " disconnected"}`}
-                />
-
-                {liveConnected
-                  ? "SYSTEM CONNECTED"
-                  : "RECONNECTING"}
-
-                <span>·</span>
-                {dateDisplay}
+          {notificationsOpen && (
+            <div className="notification-panel">
+              <div className="panel-heading">
+                <strong>Notifications</strong>
+                <button
+                  className="icon-button"
+                  onClick={() => setNotificationsOpen(false)}
+                  aria-label="Close notifications"
+                >
+                  <X size={16} />
+                </button>
               </div>
 
-              <h1>
-                Good {greeting}, Mihiretu{" "}
-                <span className="wave">✳</span>
-              </h1>
+              {activeIncidents.length === 0 ? (
+                <p className="empty-message">
+                  No active community reports.
+                </p>
+              ) : (
+                activeIncidents.slice(0, 5).map((incident) => (
+                  <div className="notification-item" key={incident.id}>
+                    <span className={`severity-dot ${incident.severity}`} />
+                    <div>
+                      <strong>{incident.type}</strong>
+                      <span>{incident.location}</span>
+                      <small>{formatTime(incident.reportedAt)}</small>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
+        </header>
 
+        <div className="dashboard-content">
+          <div className="welcome-row">
+            <div>
+              <div className="eyebrow">
+                COMMUNITY OPERATIONS CENTER
+              </div>
+              <h2>Good day, Community Team</h2>
               <p>
-                Community reporting for Aykel Town.
-                Traffic monitoring below still uses
-                simulated demonstration data.
+                Monitor local activity, review reports and coordinate responses.
               </p>
             </div>
 
-            <div className="heading-actions">
-              <button
-                className="button button-secondary"
-                onClick={exportDashboard}
-                disabled={!dashboard}
-              >
-                <Download size={15} />
-                Export report
-              </button>
-
-              <button
-                className={`button button-secondary${refreshing ? " is-loading" : ""}`}
-                onClick={() => void refresh(true)}
-                disabled={refreshing}
-              >
-                <RefreshCw
-                  size={15}
-                  className={refreshing ? "spin" : ""}
-                />
-                Refresh
-              </button>
-
-              <button
-                className="button button-primary"
-                onClick={openIncidentForm}
-              >
-                <Plus size={16} />
-                Report a problem
-              </button>
-            </div>
+            <button
+              className="primary-button"
+              onClick={() => setReportOpen(true)}
+            >
+              <Plus size={17} />
+              New community report
+            </button>
           </div>
-
-          {/* ERROR MESSAGE */}
 
           {error && (
             <div className="error-banner">
-              <AlertTriangle size={17} />
-
+              <AlertTriangle size={18} />
               <div>
-                <strong>
-                  Unable to load dashboard
-                </strong>
-
-                <span>
-                  {error} Start the application with{" "}
-                  <code>npm run dev</code>.
-                </span>
+                <strong>Connection problem</strong>
+                <span>{error}</span>
               </div>
-
               <button
-                className="text-button"
-                onClick={() => void refresh()}
+                className="secondary-button"
+                onClick={() => void refresh(true)}
               >
                 Try again
               </button>
             </div>
           )}
 
-          {/* COMMUNITY REPORT METRICS */}
+          <div className="demo-banner">
+            <span className="demo-icon">
+              <Activity size={16} />
+            </span>
+            <span>
+              <strong>Demonstration environment</strong>
+              Traffic readings, intersection locations and signal controls
+              are simulated. Community reports are stored in your local database.
+            </span>
+          </div>
 
-          <section
-            className="metrics-grid"
-            aria-label="Community report summary"
-          >
-            <article className="metric-card">
-              <div className="metric-top">
-                <span className="metric-icon mint">
-                  <Activity size={17} />
-                </span>
+          <section className="metrics-grid">
+            <MetricCard
+              title="Monitored intersections"
+              value={dashboard?.summary.monitoredIntersections ?? 0}
+              description="Demo network locations"
+              icon={MapPin}
+              tone="green"
+            />
 
-                <span className="metric-kicker">
-                  TOTAL REPORTS
-                </span>
-              </div>
+            <MetricCard
+              title="Average traffic speed"
+              value={`${dashboard?.summary.averageSpeed ?? 0} km/h`}
+              description="Simulated traffic readings"
+              icon={Gauge}
+              tone="blue"
+            />
 
-              <div className="metric-value">
-                {loading ? "—" : totalReports}
-                <span className="metric-unit">
-                  reports
-                </span>
-              </div>
+            <MetricCard
+              title="Active reports"
+              value={dashboard?.summary.activeIncidents ?? 0}
+              description="Unresolved community reports"
+              icon={Siren}
+              tone="orange"
+            />
 
-              <div className="metric-foot">
-                All submitted community reports
-              </div>
-
-              <div className="metric-progress">
-                <span
-                  style={{
-                    width: totalReports
-                      ? `${Math.min(100, (resolvedReports / totalReports) * 100)}%`
-                      : "0%",
-                  }}
-                />
-              </div>
-            </article>
-
-            <article className="metric-card">
-              <div className="metric-top">
-                <span className="metric-icon amber">
-                  <AlertTriangle size={17} />
-                </span>
-
-                <span className="metric-kicker">
-                  AWAITING REVIEW
-                </span>
-
-                <span className="metric-trend negative">
-                  <ArrowUpRight size={13} />
-                  Open
-                </span>
-              </div>
-
-              <div className="metric-value">
-                {loading ? "—" : openReports}
-                <span className="metric-unit">
-                  open
-                </span>
-              </div>
-
-              <div className="metric-foot">
-                Reports awaiting operator review
-              </div>
-
-              <div className="incident-stack">
-                {dashboard?.incidents
-                  .filter((item) => item.status === "open")
-                  .slice(0, 8)
-                  .map((incident) => (
-                    <i
-                      key={incident.id}
-                      className={`incident-pip ${incident.severity}`}
-                    />
-                  ))}
-              </div>
-            </article>
-
-            <article className="metric-card">
-              <div className="metric-top">
-                <span className="metric-icon blue">
-                  <RefreshCw size={17} />
-                </span>
-
-                <span className="metric-kicker">
-                  IN PROGRESS
-                </span>
-
-                <span className="metric-trend metric-demo-tag">
-                  REVIEW
-                </span>
-              </div>
-
-              <div className="metric-value">
-                {loading
-                  ? "—"
-                  : investigatingReports}
-                <span className="metric-unit">
-                  investigating
-                </span>
-              </div>
-
-              <div className="metric-foot">
-                Reports being handled by operators
-              </div>
-
-              <div className="metric-progress">
-                <span
-                  style={{
-                    width: totalReports
-                      ? `${(investigatingReports / totalReports) * 100}%`
-                      : "0%",
-                  }}
-                />
-              </div>
-            </article>
-
-            <article className="metric-card">
-              <div className="metric-top">
-                <span className="metric-icon violet">
-                  <ShieldCheck size={17} />
-                </span>
-
-                <span className="metric-kicker">
-                  RESOLVED REPORTS
-                </span>
-
-                <span className="metric-trend positive">
-                  <Check size={13} />
-                  Closed
-                </span>
-              </div>
-
-              <div className="metric-value">
-                {loading ? "—" : resolvedReports}
-                <span className="metric-unit">
-                  resolved
-                </span>
-              </div>
-
-              <div className="metric-foot">
-                {loading
-                  ? "Loading report information..."
-                  : `${criticalReports} unresolved critical-priority reports`}
-              </div>
-
-              <div className="metric-progress violet-progress">
-                <span
-                  style={{
-                    width: totalReports
-                      ? `${(resolvedReports / totalReports) * 100}%`
-                      : "0%",
-                  }}
-                />
-              </div>
-            </article>
+            <MetricCard
+              title="Adaptive signals"
+              value={dashboard?.summary.adaptiveSignals ?? 0}
+              description="Simulated signal settings"
+              icon={Zap}
+              tone="purple"
+            />
           </section>
 
-          {/* RECOMMENDATIONS */}
+          {page === "overview" && (
+            <>
+              <section className="content-grid">
+                <div className="panel map-panel">
+                  <div className="panel-header">
+                    <div>
+                      <div className="eyebrow">NETWORK OVERVIEW</div>
+                      <h3>Traffic demonstration network</h3>
+                      <p>Illustrative intersection positions</p>
+                    </div>
 
-          <section
-            className="recommendations-card"
-            aria-labelledby="recommendations-title"
-          >
-            <div className="recommendations-heading">
-              <div>
-                <span className="eyebrow">
-                  DECISION SUPPORT · OPERATOR REVIEW
-                </span>
-
-                <h2 id="recommendations-title">
-                  Recommended next steps
-                </h2>
-              </div>
-
-              <span className="recommendations-note">
-                <Sparkles size={13} />
-                Rule-based · simulated data
-              </span>
-            </div>
-
-            {loading && !dashboard ? (
-              <div className="recommendations-clear">
-                Waiting for the first traffic update…
-              </div>
-            ) : (
-              (dashboard?.recommendations ?? []).length >
-              0 ? (
-                <div className="recommendation-list">
-                  {dashboard?.recommendations.map(
-                    (recommendation) => (
-                      <article
-                        className={`recommendation-item ${recommendation.priority}`}
-                        key={recommendation.id}
-                      >
-                        <span className="recommendation-icon">
-                          <AlertTriangle size={16} />
-                        </span>
-
-                        <div className="recommendation-copy">
-                          <div>
-                            <span
-                              className={`recommendation-priority ${recommendation.priority}`}
-                            >
-                              {recommendation.priority}
-                            </span>
-
-                            <strong>
-                              {recommendation.title}
-                            </strong>
-                          </div>
-
-                          <p>
-                            {recommendation.reason}
-                          </p>
-                        </div>
-
-                        <button
-                          className="recommendation-action"
-                          onClick={() =>
-                            openRecommendation(
-                              recommendation,
-                            )
-                          }
-                        >
-                          {recommendation.actionLabel}
-                          <ArrowRight size={14} />
-                        </button>
-                      </article>
-                    ),
-                  )}
-                </div>
-              ) : (
-                <div className="recommendations-clear">
-                  <ShieldCheck size={17} />
-                  No urgent actions suggested. Continue
-                  routine monitoring.
-                </div>
-              )
-            )}
-
-            <p className="recommendations-disclaimer">
-              Recommendations are decision support only.
-              Traffic readings and signal simulations are
-              demonstration data. No physical traffic
-              signals are controlled.
-            </p>
-          </section>
-
-          {/* MAIN CONTENT GRID */}
-
-          <div className="content-grid">
-            <div className="primary-column">
-              <p className="recommendations-disclaimer">
-                The traffic map below contains sample
-                intersections. These are not verified
-                Aykel locations.
-              </p>
-
-              <CityMap
-                intersections={
-                  dashboard?.intersections ??
-                  emptyIntersections
-                }
-                onSelect={selectIntersection}
-                selectedId={selectedId}
-              />
-
-              {/* TRAFFIC CHART */}
-
-              <section
-                className="traffic-card"
-                id="insights"
-              >
-                <div className="section-head">
-                  <div>
-                    <span className="eyebrow">
-                      SAMPLE NETWORK PERFORMANCE
-                    </span>
-
-                    <h2>
-                      Traffic volume demonstration
-                    </h2>
+                    <span className="demo-tag">SIMULATED</span>
                   </div>
 
-                  <label className="chart-range">
-                    <span className="visually-hidden">
-                      Traffic chart time range
-                    </span>
+                  <CityMap
+                    intersections={intersections}
+                    onSelect={setSelectedIntersection}
+                    selectedId={selectedIntersection}
+                  />
+                </div>
+
+                <div className="panel traffic-panel">
+                  <div className="panel-header">
+                    <div>
+                      <div className="eyebrow">TRAFFIC ANALYTICS</div>
+                      <h3>Traffic volume trend</h3>
+                      <p>Recorded demonstration readings</p>
+                    </div>
 
                     <select
-                      className="select-button"
-                      value={chartRange}
+                      className="small-select"
+                      value={chartHours}
                       onChange={(event) =>
-                        setChartRange(
-                          Number(
-                            event.target.value,
-                          ) as 6 | 12,
+                        setChartHours(
+                          Number(event.target.value) as 6 | 12,
                         )
                       }
+                      aria-label="Chart time range"
                     >
-                      <option value={6}>
-                        Last 6 hours
-                      </option>
-
-                      <option value={12}>
-                        Last 12 hours
-                      </option>
+                      <option value={6}>6 points</option>
+                      <option value={12}>12 points</option>
                     </select>
-
-                    <ChevronDown
-                      size={14}
-                      aria-hidden="true"
-                    />
-                  </label>
-                </div>
-
-                <div className="chart-summary">
-                  <span className="chart-value">
-                    {averageTrend ?? "—"}
-                    <span>%</span>
-                  </span>
-
-                  <span className="chart-summary-label">
-                    avg. road capacity
-                  </span>
-                </div>
-
-                <TrafficChart
-                  data={visibleTrend}
-                  hours={chartRange}
-                />
-
-                <div className="chart-foot">
-                  <span>
-                    <i className="chart-key" />
-                    Road capacity
-                  </span>
-
-                  <span>
-                    {dashboard?.trendSource === "history"
-                      ? "Saved simulated readings"
-                      : dashboard?.trendSource === "mixed"
-                        ? "Saved history + modeled gaps"
-                        : "Modeled estimate · No recent history"}
-                  </span>
-                </div>
-
-                {/* TRAFFIC FORECAST */}
-
-                <div
-                  className="forecast-panel"
-                  aria-live="polite"
-                >
-                  <div className="forecast-title">
-                    <span className="forecast-icon">
-                      <Sparkles size={14} />
-                    </span>
-
-                    <span>
-                      <strong>
-                        Next-hour traffic outlook
-                      </strong>
-
-                      <small>
-                        Linear trend model · simulated
-                        readings
-                      </small>
-                    </span>
                   </div>
 
-                  {dashboard?.forecast ? (
-                    <>
-                      <div className="forecast-result">
-                        <strong>
-                          {dashboard.forecast.predictedVolume}%
-                        </strong>
+                  <div className="chart-summary">
+                    <strong>
+                      {formatNumber(
+                        trafficData.at(-1)?.volume ?? 0,
+                      )}
+                    </strong>
+                    <span>vehicles per hour · latest reading</span>
+                  </div>
 
-                        <span>
-                          estimated capacity
-                        </span>
-                      </div>
+                  <TrafficChart
+                    data={trafficData}
+                    hours={chartHours}
+                  />
 
-                      <div
-                        className={`forecast-direction ${dashboard.forecast.direction}`}
-                      >
-                        {dashboard.forecast.direction ===
-                        "rising" ? (
-                          <ArrowUpRight size={14} />
-                        ) : dashboard.forecast.direction ===
-                          "falling" ? (
-                          <ArrowDownRight size={14} />
-                        ) : (
-                          <Activity size={13} />
-                        )}
-
-                        <strong>
-                          {dashboard.forecast.change > 0
-                            ? "+"
-                            : ""}
-                          {dashboard.forecast.change} pts
-                        </strong>
-
-                        <span>
-                          {dashboard.forecast.direction}
-                        </span>
-                      </div>
-
-                      <div className="forecast-range">
-                        <span>Estimated range</span>
-
-                        <strong>
-                          {dashboard.forecast.lowerBound}–
-                          {dashboard.forecast.upperBound}%
-                        </strong>
-                      </div>
-                    </>
-                  ) : (
-                    <p className="forecast-empty">
-                      Not enough traffic readings to
-                      estimate a trend.
-                    </p>
-                  )}
-
-                  <p className="forecast-disclaimer">
-                    A short-term statistical estimate, not
-                    a trained AI model. Review conditions
-                    before changing signal plans.
-                  </p>
+                  <div className="chart-footer">
+                    <span><span className="legend-dot green" />Traffic volume</span>
+                    <span>Historical demo data</span>
+                  </div>
                 </div>
               </section>
-            </div>
 
-            {/* SIDE COLUMN */}
+              <section className="content-grid lower-grid">
+                <div className="panel incidents-panel">
+                  <div className="panel-header">
+                    <div>
+                      <div className="eyebrow">COMMUNITY ACTIVITY</div>
+                      <h3>Recent reports</h3>
+                      <p>Latest submitted community incidents</p>
+                    </div>
 
-            <div className="side-column">
-              {/* COMMUNITY REPORTS */}
-
-              <section
-                className="incidents-card"
-                id="incidents"
-              >
-                <div className="section-head incidents-heading">
-                  <div>
-                    <span className="eyebrow">
-                      COMMUNITY RESPONSE QUEUE
-                    </span>
-
-                    <h2>
-                      Community reports{" "}
-                      <span className="heading-count">
-                        {summary?.activeIncidents ?? 0}
-                      </span>
-                    </h2>
+                    <button
+                      className="text-button"
+                      onClick={() => navigate("incidents")}
+                    >
+                      View all <ArrowRight size={15} />
+                    </button>
                   </div>
 
-                  <label
-                    className="incident-filter"
-                    title="Filter reports by urgency"
-                  >
-                    <SlidersHorizontal
-                      size={15}
-                      aria-hidden="true"
-                    />
-
-                    <select
-                      value={incidentSeverity}
-                      onChange={(event) =>
-                        setIncidentSeverity(
-                          event.target.value as
-                            | "all"
-                            | IncidentSeverity,
-                        )
-                      }
-                      aria-label="Filter reports by urgency"
-                    >
-                      <option value="all">
-                        All urgencies
-                      </option>
-
-                      {[...severityOptions]
-                        .reverse()
-                        .map((severity) => (
-                          <option
-                            key={severity}
-                            value={severity}
-                          >
-                            {severity[0].toUpperCase() +
-                              severity.slice(1)}
-                          </option>
-                        ))}
-                    </select>
-
-                    <ChevronDown
-                      size={12}
-                      aria-hidden="true"
-                    />
-                  </label>
+                  {incidents.length === 0 ? (
+                    <div className="empty-state">
+                      <ShieldCheck size={28} />
+                      <strong>No reports yet</strong>
+                      <span>Community reports will appear here.</span>
+                    </div>
+                  ) : (
+                    <div className="incident-list">
+                      {incidents.slice(0, 5).map((incident) => (
+                        <IncidentRow
+                          key={incident.id}
+                          incident={incident}
+                          onStatusChange={changeIncidentStatus}
+                        />
+                      ))}
+                    </div>
+                  )}
                 </div>
 
-                <div className="incident-list">
-                  {visibleIncidents.map((incident) => (
-                    <IncidentRow
-                      key={incident.id}
-                      incident={incident}
-                      recommended={
-                        focusedIncidentId ===
-                        String(incident.id)
-                      }
-                      onAdvance={() =>
-                        void changeIncidentStatus(
-                          incident,
-                          incident.status === "open"
-                            ? "investigating"
-                            : "resolved",
-                        )
-                      }
-                    />
-                  ))}
+                <div className="panel recommendations-panel">
+                  <div className="panel-header">
+                    <div>
+                      <div className="eyebrow">SYSTEM INSIGHTS</div>
+                      <h3>Recommendations</h3>
+                      <p>Automated demonstration insights</p>
+                    </div>
+                    <span className="recommendation-icon">
+                      <Zap size={18} />
+                    </span>
+                  </div>
 
-                  {!loading &&
-                    visibleIncidents.length === 0 && (
-                      <div className="empty-incidents">
-                        {activeIncidents.length === 0 ? (
-                          <ShieldCheck size={24} />
-                        ) : (
-                          <SlidersHorizontal size={22} />
-                        )}
+                  {dashboard?.recommendations.length ? (
+                    <div className="recommendation-list">
+                      {dashboard.recommendations.map((item) => (
+                        <div className="recommendation-item" key={item.id}>
+                          <span className={`recommendation-priority ${item.priority}`} />
+                          <div>
+                            <strong>{item.title}</strong>
+                            <p>{item.reason}</p>
+                            <button
+                              className="text-button"
+                              onClick={() => {
+                                if (item.kind === "incident") {
+                                  navigate("incidents");
+                                } else {
+                                  setSelectedIntersection(item.targetId);
+                                  navigate("monitoring");
+                                }
+                              }}
+                            >
+                              {item.actionLabel}
+                              <ArrowRight size={13} />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="empty-state">
+                      <Check size={27} />
+                      <strong>No recommendations</strong>
+                      <span>There are no current system recommendations.</span>
+                    </div>
+                  )}
+                </div>
+              </section>
+            </>
+          )}
 
-                        <strong>
-                          {activeIncidents.length === 0
-                            ? "No active reports"
-                            : "No matching reports"}
-                        </strong>
-
-                        <span>
-                          {activeIncidents.length === 0
-                            ? "Community-submitted problems will appear here."
-                            : "Try selecting another urgency level."}
-                        </span>
-                      </div>
-                    )}
+          {page === "incidents" && (
+            <section className="panel full-panel">
+              <div className="panel-header">
+                <div>
+                  <div className="eyebrow">REPORT MANAGEMENT</div>
+                  <h3>Community reports</h3>
+                  <p>Review, investigate and resolve reported issues.</p>
                 </div>
 
                 <button
-                  className="incident-add"
-                  onClick={openIncidentForm}
+                  className="primary-button"
+                  onClick={() => setReportOpen(true)}
                 >
-                  <Plus size={15} />
-                  Report a community problem
+                  <Plus size={16} />
+                  Submit report
                 </button>
-              </section>
+              </div>
 
-              {/* SAMPLE INTERSECTIONS */}
-
-              <section
-                className="intersection-card"
-                id="intersections"
-              >
-                <div className="section-head intersection-heading">
-                  <div>
-                    <span className="eyebrow">
-                      DEMONSTRATION DATA
-                    </span>
-
-                    <h2>Sample intersections</h2>
-                  </div>
-
-                  <span
-                    className={`online-badge${liveConnected ? "" : " offline"}`}
-                    aria-live="polite"
-                  >
-                    <i />
-                    {liveConnected
-                      ? "CONNECTED"
-                      : "RECONNECTING"}
-                  </span>
-                </div>
-
-                <div className="intersection-controls">
-                  <label className="network-filter">
-                    <span className="visually-hidden">
-                      Filter intersections by congestion
-                    </span>
-
-                    <select
-                      value={intersectionFilter}
-                      onChange={(event) =>
-                        setIntersectionFilter(
-                          event.target.value as IntersectionFilter,
-                        )
-                      }
-                    >
-                      <option value="all">
-                        All traffic
-                      </option>
-
-                      <option value="congested">
-                        Needs attention
-                      </option>
-
-                      <option value="clear">
-                        Clear / moderate
-                      </option>
-                    </select>
-
-                    <ChevronDown
-                      size={13}
-                      aria-hidden="true"
-                    />
-                  </label>
-
-                  <label className="network-filter">
-                    <span className="visually-hidden">
-                      Sort intersections
-                    </span>
-
-                    <select
-                      value={intersectionSort}
-                      onChange={(event) =>
-                        setIntersectionSort(
-                          event.target.value as IntersectionSort,
-                        )
-                      }
-                    >
-                      <option value="priority">
-                        Priority
-                      </option>
-
-                      <option value="speed">
-                        Highest speed
-                      </option>
-
-                      <option value="name">
-                        Name
-                      </option>
-                    </select>
-
-                    <ChevronDown
-                      size={13}
-                      aria-hidden="true"
-                    />
-                  </label>
-                </div>
-
-                <label className="search-field">
-                  <Search size={15} />
-
+              <div className="table-toolbar">
+                <div className="search-box">
+                  <Search size={17} />
                   <input
                     value={search}
-                    onChange={(event) =>
-                      setSearch(event.target.value)
-                    }
-                    placeholder="Find a sample intersection..."
-                    aria-label="Search sample intersections"
+                    onChange={(event) => setSearch(event.target.value)}
+                    placeholder="Search reports..."
                   />
+                </div>
 
-                  {search && (
-                    <button
-                      aria-label="Clear search"
-                      onClick={() => setSearch("")}
-                    >
-                      <X size={14} />
-                    </button>
-                  )}
-                </label>
+                <div className="filter-control">
+                  <Filter size={15} />
+                  <select
+                    value={severityFilter}
+                    onChange={(event) => setSeverityFilter(event.target.value)}
+                    aria-label="Filter by severity"
+                  >
+                    <option value="all">All severities</option>
+                    <option value="critical">Critical</option>
+                    <option value="high">High</option>
+                    <option value="medium">Medium</option>
+                    <option value="low">Low</option>
+                  </select>
+                </div>
 
-                <div className="intersection-list">
-                  {filtered.map((intersection) => (
-                    <button
-                      className={`intersection-row${selectedId === intersection.id ? " selected" : ""}`}
-                      key={intersection.id}
-                      onClick={() =>
-                        setSelectedId(
-                          selectedId === intersection.id
-                            ? null
-                            : intersection.id,
-                        )
-                      }
-                    >
-                      <span
-                        className={`intersection-signal ${intersection.congestion.toLowerCase()}`}
-                      >
-                        <i />
-                      </span>
+                <button
+                  className="secondary-button"
+                  onClick={() => downloadCsv(filteredIncidents)}
+                >
+                  <Download size={16} />
+                  Export CSV
+                </button>
+              </div>
 
-                      <span className="intersection-name">
-                        <strong>
-                          {intersection.name}
-                        </strong>
+              <div className="incident-list">
+                {filteredIncidents.length === 0 ? (
+                  <div className="empty-state">
+                    <Search size={28} />
+                    <strong>No matching reports</strong>
+                    <span>Try changing your search or filters.</span>
+                  </div>
+                ) : (
+                  filteredIncidents.map((incident) => (
+                    <IncidentRow
+                      key={incident.id}
+                      incident={incident}
+                      onStatusChange={changeIncidentStatus}
+                    />
+                  ))
+                )}
+              </div>
+            </section>
+          )}
 
-                        <span>
-                          {intersection.district}
-                        </span>
-                      </span>
+          {page === "monitoring" && (
+            <section className="panel full-panel">
+              <div className="panel-header">
+                <div>
+                  <div className="eyebrow">DEMONSTRATION NETWORK</div>
+                  <h3>Traffic monitoring</h3>
+                  <p>Simulated readings from the demonstration intersections.</p>
+                </div>
 
-                      <span className="intersection-speed">
-                        <strong>
-                          {intersection.speed}
-                        </strong>
+                <span className="demo-tag">SIMULATED DATA</span>
+              </div>
 
-                        <span>mph</span>
-                      </span>
+              <div className="table-toolbar">
+                <div className="search-box">
+                  <Search size={17} />
+                  <input
+                    value={search}
+                    onChange={(event) => setSearch(event.target.value)}
+                    placeholder="Search intersections or districts..."
+                  />
+                </div>
+              </div>
 
-                      <span
-                        className={`congestion-label ${metricLabel(intersection.congestion)}`}
-                      >
+              <div className="intersection-grid">
+                {filteredIntersections.map((intersection) => (
+                  <article
+                    className={`intersection-card ${selectedIntersection === intersection.id ? "selected" : ""}`}
+                    key={intersection.id}
+                  >
+                    <div className="intersection-card-top">
+                      <div className="intersection-icon">
+                        <CarFront size={20} />
+                      </div>
+
+                      <span className={`congestion-badge ${congestionClass(intersection.congestion)}`}>
                         {intersection.congestion}
                       </span>
-                    </button>
-                  ))}
+                    </div>
 
-                  {!loading &&
-                    filtered.length === 0 && (
-                      <div className="search-empty">
-                        No sample intersections match the
-                        current search and filters.
+                    <h4>{intersection.name}</h4>
+                    <span className="intersection-district">
+                      <MapPin size={13} />
+                      {intersection.district}
+                    </span>
+
+                    <div className="intersection-stats">
+                      <div>
+                        <span>Speed</span>
+                        <strong>{intersection.speed} km/h</strong>
                       </div>
-                    )}
+                      <div>
+                        <span>Vehicles/hour</span>
+                        <strong>{formatNumber(intersection.vehiclesPerHour)}</strong>
+                      </div>
+                      <div>
+                        <span>Waiting time</span>
+                        <strong>{intersection.waitSeconds}s</strong>
+                      </div>
+                      <div>
+                        <span>Signal phase</span>
+                        <strong>{intersection.signalPhase}</strong>
+                      </div>
+                    </div>
+
+                    <div className="intersection-card-footer">
+                      <span className="signal-mode">
+                        <span className={`signal-dot ${intersection.mode}`} />
+                        {intersection.mode === "adaptive" ? "Adaptive" : "Fixed"} mode
+                      </span>
+
+                      <button
+                        className="text-button"
+                        onClick={() => void toggleSignal(intersection)}
+                      >
+                        Switch mode <ArrowRight size={13} />
+                      </button>
+                    </div>
+                  </article>
+                ))}
+              </div>
+
+              {filteredIntersections.length === 0 && (
+                <div className="empty-state">
+                  No intersections match your search.
+                </div>
+              )}
+            </section>
+          )}
+
+          {page === "analytics" && (
+            <>
+              <section className="metrics-grid analytics-metrics">
+                <MetricCard
+                  title="Congestion index"
+                  value={`${dashboard?.summary.congestionIndex ?? 0}%`}
+                  description="Calculated from average speed"
+                  icon={Gauge}
+                  tone="orange"
+                />
+
+                <MetricCard
+                  title="Severe congestion"
+                  value={dashboard?.summary.severeCongestion ?? 0}
+                  description="Intersections with severe congestion"
+                  icon={AlertTriangle}
+                  tone="red"
+                />
+
+                <MetricCard
+                  title="Active reports"
+                  value={dashboard?.summary.activeIncidents ?? 0}
+                  description="Current unresolved reports"
+                  icon={Siren}
+                  tone="purple"
+                />
+
+                <MetricCard
+                  title="Adaptive signals"
+                  value={dashboard?.summary.adaptiveSignals ?? 0}
+                  description="Simulated adaptive signal settings"
+                  icon={Zap}
+                  tone="blue"
+                />
+              </section>
+
+              <section className="panel full-panel">
+                <div className="panel-header">
+                  <div>
+                    <div className="eyebrow">TRAFFIC ANALYTICS</div>
+                    <h3>Traffic volume history</h3>
+                    <p>
+                      Source: {dashboard?.trendSource ?? "modeled"} demonstration data
+                    </p>
+                  </div>
+
+                  <select
+                    className="small-select"
+                    value={chartHours}
+                    onChange={(event) =>
+                      setChartHours(
+                        Number(event.target.value) as 6 | 12,
+                      )
+                    }
+                  >
+                    <option value={6}>Last 6 points</option>
+                    <option value={12}>Last 12 points</option>
+                  </select>
                 </div>
 
-                {/* SELECTED INTERSECTION DETAILS */}
+                <TrafficChart
+                  data={trafficData}
+                  hours={chartHours}
+                />
 
-                {selected && (
-                  <div className="intersection-detail">
-                    <div className="detail-header">
-                      <div>
-                        <span className="eyebrow">
-                          DEMO SIGNAL CONTROL ·{" "}
-                          {selected.id.toUpperCase()}
-                        </span>
-
-                        <strong>{selected.name}</strong>
-                      </div>
-
-                      <span
-                        className={`mode-badge ${selected.mode}`}
-                      >
-                        {selected.mode === "adaptive" ? (
-                          <Sparkles size={12} />
-                        ) : (
-                          <Signal size={12} />
-                        )}
-
-                        {selected.mode}
-                      </span>
+                {dashboard?.forecast && (
+                  <div className="forecast-panel">
+                    <div className="forecast-icon">
+                      <TrendingUp size={20} />
                     </div>
 
-                    <div className="detail-stats">
+                    <div>
+                      <strong>60-minute demonstration forecast</strong>
+                      <p>
+                        Predicted volume:{" "}
+                        {formatNumber(dashboard.forecast.predictedVolume)}
+                        {" vehicles/hour"}
+                      </p>
                       <span>
-                        <strong>
-                          {selected.vehiclesPerHour.toLocaleString()}
-                        </strong>
-
-                        <small>vehicles / hr</small>
-                      </span>
-
-                      <span>
-                        <strong>
-                          {selected.waitSeconds}s
-                        </strong>
-
-                        <small>avg. wait</small>
-                      </span>
-
-                      <span>
-                        <strong>
-                          {selected.dailyVehicles.toLocaleString()}
-                        </strong>
-
-                        <small>vehicles / day</small>
+                        Expected direction: {dashboard.forecast.direction}
+                        {" · "}
+                        Change: {dashboard.forecast.change}%
                       </span>
                     </div>
-
-                    <button
-                      className="optimize-button"
-                      onClick={() =>
-                        void changeSignalMode(selected)
-                      }
-                    >
-                      <Zap size={14} />
-
-                      {selected.mode === "adaptive"
-                        ? "Simulate fixed timing"
-                        : "Simulate adaptive timing"}
-
-                      <ArrowRight size={14} />
-                    </button>
-
-                    <span className="operator-note">
-                      <ShieldCheck size={12} />
-                      Demo only — no physical signal is
-                      controlled
-                    </span>
                   </div>
                 )}
-
-                <div className="intersection-footer">
-                  <span>
-                    Showing {filtered.length} of{" "}
-                    {dashboard?.intersections.length ?? 0}
-                  </span>
-
-                  <span className="sim-note">
-                    <Activity size={12} />
-                    Simulation
-                  </span>
-                </div>
               </section>
-            </div>
-          </div>
-
-          {/* FOOTER */}
+            </>
+          )}
 
           <footer className="dashboard-footer">
-            <span>
-              © 2026 Aykel Community Operations
-            </span>
+            <div>
+              <span className="footer-status-dot" />
+              Connected to Aykel Connect API
+            </div>
 
             <span>
-              <span
-                className={`footer-online-dot${liveConnected && !error ? "" : " status-offline"}`}
-              />
-
-              {error
-                ? "API unavailable"
-                : liveConnected
-                  ? "System connected"
-                  : "System reconnecting"}
+              Last updated:{" "}
+              {dashboard?.updatedAt
+                ? formatTime(dashboard.updatedAt)
+                : "Waiting for data"}
             </span>
-
-            <span>
-              Community reports are submissions and
-              require verification. Traffic readings
-              are simulated.
-            </span>
-
-            <button
-              className="footer-help"
-              onClick={() => setOpenPanel("help")}
-            >
-              <CircleHelp size={13} />
-              Need help?
-            </button>
           </footer>
         </div>
       </main>
 
-      {/* REPORT FORM MODAL */}
-
-      {showIncidentForm && (
+      {reportOpen && (
         <div
           className="modal-backdrop"
-          role="presentation"
-          onClick={(event) => {
-            if (
-              event.target === event.currentTarget &&
-              !saving
-            ) {
-              setShowIncidentForm(false);
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              setReportOpen(false);
             }
           }}
         >
           <section
-            className="incident-modal"
+            className="report-modal"
             role="dialog"
             aria-modal="true"
-            aria-labelledby="incident-form-title"
+            aria-labelledby="report-modal-title"
           >
-            <div className="modal-heading">
+            <div className="modal-header">
               <div>
-                <span className="eyebrow">
-                  AYKEL COMMUNITY REPORTING
-                </span>
-
-                <h2 id="incident-form-title">
-                  Report a community problem
-                </h2>
-
-                <p>
-                  Help identify problems affecting people
-                  in Aykel Town.
-                </p>
+                <div className="eyebrow">COMMUNITY REPORTING</div>
+                <h3 id="report-modal-title">Submit a report</h3>
+                <p>Tell the operations team about a local issue.</p>
               </div>
 
               <button
                 className="icon-button"
-                aria-label="Close dialog"
-                onClick={() =>
-                  setShowIncidentForm(false)
-                }
-                disabled={saving}
+                onClick={() => setReportOpen(false)}
+                aria-label="Close report form"
               >
-                <X size={18} />
+                <X size={19} />
               </button>
             </div>
 
-            <form
-              onSubmit={(event) =>
-                void submitIncident(event)
-              }
-            >
+            <form onSubmit={submitIncident}>
               <label>
-                Problem category
-
-                <select
-                  name="type"
+                Location *
+                <input
                   required
-                  defaultValue=""
-                >
-                  <option value="" disabled>
-                    Select a problem category
-                  </option>
+                  maxLength={120}
+                  value={report.location}
+                  onChange={(event) =>
+                    setReport({
+                      ...report,
+                      location: event.target.value,
+                    })
+                  }
+                  placeholder="Enter the location of the issue"
+                />
+              </label>
 
-                  {communityProblemTypes.map((type) => (
-                    <option key={type} value={type}>
-                      {type}
+              <label>
+                Related demonstration intersection
+                <select
+                  value={report.intersectionId}
+                  onChange={(event) =>
+                    setReport({
+                      ...report,
+                      intersectionId: event.target.value,
+                    })
+                  }
+                >
+                  <option value="">Not linked to an intersection</option>
+
+                  {intersections.map((intersection) => (
+                    <option
+                      key={intersection.id}
+                      value={intersection.id}
+                    >
+                      {intersection.name} — {intersection.district}
                     </option>
                   ))}
                 </select>
               </label>
 
               <label>
-                Location in Aykel
-
-                <input
-                  name="location"
-                  value={formLocation}
-                  onChange={(event) =>
-                    setFormLocation(event.target.value)
-                  }
-                  placeholder="Enter an area, road, or nearby landmark"
-                  maxLength={120}
-                  required
-                />
-              </label>
-
-              <label>
-                Urgency
-
+                Issue type *
                 <select
-                  name="severity"
-                  defaultValue="medium"
+                  value={report.type}
+                  onChange={(event) =>
+                    setReport({
+                      ...report,
+                      type: event.target.value,
+                    })
+                  }
                 >
-                  <option value="low">Low</option>
-                  <option value="medium">Medium</option>
-                  <option value="high">High</option>
-                  <option value="critical">
-                    Critical
-                  </option>
+                  <option>Road damage</option>
+                  <option>Vehicle collision</option>
+                  <option>Roadwork</option>
+                  <option>Traffic congestion</option>
+                  <option>Signal malfunction</option>
+                  <option>Pedestrian safety</option>
+                  <option>Street lighting</option>
+                  <option>Waste management</option>
+                  <option>Other</option>
                 </select>
               </label>
 
               <label>
-                Describe the problem{" "}
-                <span className="optional-label">
-                  Optional
-                </span>
-
-                <textarea
-                  name="description"
-                  rows={4}
-                  maxLength={500}
-                  placeholder="Explain what happened and how it affects people..."
-                />
+                Severity
+                <select
+                  value={report.severity}
+                  onChange={(event) =>
+                    setReport({
+                      ...report,
+                      severity: event.target.value as IncidentSeverity,
+                    })
+                  }
+                >
+                  <option value="low">Low</option>
+                  <option value="medium">Medium</option>
+                  <option value="high">High</option>
+                  <option value="critical">Critical</option>
+                </select>
               </label>
 
-              <div className="form-footer">
-                <span>
-                  <ShieldCheck size={14} />
-                  Community-submitted report
+              <label>
+                Description
+                <textarea
+                  maxLength={500}
+                  rows={4}
+                  value={report.description}
+                  onChange={(event) =>
+                    setReport({
+                      ...report,
+                      description: event.target.value,
+                    })
+                  }
+                  placeholder="Describe the issue and any useful details..."
+                />
+                <span className="character-count">
+                  {report.description.length}/500
                 </span>
+              </label>
+
+              <div className="modal-actions">
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={() => setReportOpen(false)}
+                  disabled={reporting}
+                >
+                  Cancel
+                </button>
 
                 <button
-                  className="button button-primary"
                   type="submit"
-                  disabled={saving}
+                  className="primary-button"
+                  disabled={reporting}
                 >
-                  {saving ? (
-                    <RefreshCw
-                      size={15}
-                      className="spin"
-                    />
+                  {reporting ? (
+                    <>
+                      <RefreshCw size={16} className="spin" />
+                      Submitting...
+                    </>
                   ) : (
-                    <Plus size={15} />
+                    <>
+                      <Plus size={16} />
+                      Submit report
+                    </>
                   )}
-
-                  {saving
-                    ? "Submitting..."
-                    : "Submit report"}
                 </button>
               </div>
             </form>
@@ -2341,260 +1533,14 @@ export default function App() {
         </div>
       )}
 
-      {/* HELP AND NOTIFICATIONS MODAL */}
-
-      {openPanel && (
-        <div
-          className="modal-backdrop"
-          role="presentation"
-          onClick={(event) => {
-            if (event.target === event.currentTarget) {
-              setOpenPanel(null);
-            }
-          }}
-        >
-          <section
-            className="incident-modal info-modal"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="info-dialog-title"
-          >
-            <div className="modal-heading">
-              <div>
-                <span className="eyebrow">
-                  {openPanel === "help"
-                    ? "AYKEL CONNECT GUIDE"
-                    : "COMMUNITY REPORTING"}
-                </span>
-
-                <h2 id="info-dialog-title">
-                  {openPanel === "help"
-                    ? "Dashboard help"
-                    : "Active community reports"}
-                </h2>
-
-                <p>
-                  {openPanel === "help"
-                    ? "Quick guidance for using the Aykel community reporting system."
-                    : `${activeIncidents.length} unresolved ${
-                        activeIncidents.length === 1
-                          ? "report"
-                          : "reports"
-                      } need review.`}
-                </p>
-              </div>
-
-              <button
-                className="icon-button"
-                aria-label="Close dialog"
-                onClick={() => setOpenPanel(null)}
-              >
-                <X size={18} />
-              </button>
-            </div>
-
-            {openPanel === "help" ? (
-              <div className="help-content">
-                <p>
-                  <strong>
-                    Report a problem:
-                  </strong>{" "}
-                  Use the report button to submit a
-                  category, location, urgency, and
-                  description.
-                </p>
-
-                <p>
-                  <strong>
-                    Track community reports:
-                  </strong>{" "}
-                  Submitted reports appear in the
-                  community response queue. An operator
-                  can move a report from open to
-                  investigating and then resolved.
-                </p>
-
-                <p>
-                  <strong>
-                    Understand urgency:
-                  </strong>{" "}
-                  Urgency is selected by the person
-                  submitting the report. It is not an
-                  automatic verification or safety
-                  assessment.
-                </p>
-
-                <p>
-                  <strong>
-                    Traffic demonstration:
-                  </strong>{" "}
-                  The sample traffic map, readings, and
-                  signal controls are simulated and do
-                  not represent verified Aykel traffic
-                  conditions.
-                </p>
-
-                <p className="help-disclaimer">
-                  Community reports should be reviewed
-                  before being treated as verified facts.
-                </p>
-              </div>
-            ) : (
-              <div className="notification-list">
-                {activeIncidents.length > 0 ? (
-                  activeIncidents.map((incident) => (
-                    <button
-                      className="notification-item"
-                      key={incident.id}
-                      onClick={() =>
-                        focusIncident(incident)
-                      }
-                    >
-                      <span
-                        className={`severity-badge ${incident.severity}`}
-                      >
-                        {incident.severity}
-                      </span>
-
-                      <span>
-                        <strong>
-                          {incident.type}
-                        </strong>
-
-                        <small>
-                          {incident.location} ·{" "}
-                          {formatTime(
-                            incident.reportedAt,
-                          )}
-                        </small>
-                      </span>
-
-                      <ArrowRight size={15} />
-                    </button>
-                  ))
-                ) : (
-                  <div className="empty-incidents">
-                    <ShieldCheck size={24} />
-
-                    <strong>
-                      No active reports
-                    </strong>
-
-                    <span>
-                      No community reports need review.
-                    </span>
-                  </div>
-                )}
-              </div>
-            )}
-          </section>
-        </div>
-      )}
-
-      {/* TOAST */}
-
-      {notice && (
-        <div
-          className={`toast${noticeError ? " toast-error" : ""}`}
-          role={noticeError ? "alert" : "status"}
-        >
-          {noticeError ? (
-            <AlertTriangle size={16} />
-          ) : (
-            <Check size={16} />
-          )}
-
-          <span>{notice}</span>
-
-          <button
-            onClick={() => setNotice("")}
-            aria-label="Dismiss notification"
-          >
-            <X size={14} />
-          </button>
+      {toast && (
+        <div className="toast-message" role="status">
+          <Check size={17} />
+          {toast}
         </div>
       )}
     </div>
   );
 }
 
-/* -------------------------------------------------------
-   INCIDENT ROW COMPONENT
-------------------------------------------------------- */
-
-function IncidentRow({
-  incident,
-  recommended,
-  onAdvance,
-}: {
-  incident: Incident;
-  recommended: boolean;
-  onAdvance: () => void;
-}) {
-  const Icon = incident.type
-    .toLowerCase()
-    .includes("roadwork")
-    ? Construction
-    : incident.type
-          .toLowerCase()
-          .includes("collision")
-      ? CarFront
-      : AlertTriangle;
-
-  return (
-    <article
-      className={`incident-row${recommended ? " recommended" : ""}`}
-      id={`incident-${incident.id}`}
-      tabIndex={-1}
-    >
-      <span
-        className={`incident-icon ${incident.severity}`}
-      >
-        <Icon size={16} />
-      </span>
-
-      <div className="incident-copy">
-        <strong>{incident.type}</strong>
-
-        <span>
-          <MapPin size={12} />
-          {incident.location}
-        </span>
-
-        <small>
-          <Clock3 size={11} />
-          {formatTime(incident.reportedAt)}
-        </small>
-      </div>
-
-      <div className="incident-controls">
-        <span
-          className={`severity-badge ${incident.severity}`}
-        >
-          {incident.severity}
-        </span>
-
-        <button
-          className="incident-action"
-          onClick={onAdvance}
-          aria-label={
-            incident.status === "open"
-              ? "Start investigating report"
-              : "Resolve report"
-          }
-          title={
-            incident.status === "open"
-              ? "Start investigating"
-              : "Resolve report"
-          }
-        >
-          {incident.status === "open" ? (
-            <ArrowRight size={15} />
-          ) : (
-            <Check size={15} />
-          )}
-        </button>
-      </div>
-    </article>
-  );
-}
+export default App;

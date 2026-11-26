@@ -1,577 +1,2600 @@
 
-import { useMemo, useState } from "react";
 import {
-  Activity, AlertTriangle, ArrowDownRight, ArrowUpRight,
-  Bell, CarFront, CheckCircle2, ChevronDown, Clock3,
-  CloudSun, Gauge, LayoutDashboard, MapPin, Menu,
-  Navigation, Search, Settings, ShieldAlert, Signal,
-  TrafficCone, Users, X, Zap,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type FormEvent,
+} from "react";
+import {
+  Activity,
+  AlertTriangle,
+  ArrowDownRight,
+  ArrowRight,
+  ArrowUpRight,
+  Bell,
+  Download,
+  CarFront,
+  Check,
+  ChevronDown,
+  CircleHelp,
+  Clock3,
+  CloudSun,
+  Construction,
+  Crosshair,
+  Gauge,
+  MapPin,
+  Menu,
+  Moon,
+  Plus,
+  RefreshCw,
+  Search,
+  ShieldCheck,
+  Signal,
+  Siren,
+  SlidersHorizontal,
+  Sparkles,
+  Sun,
+  TrendingUp,
+  X,
+  Zap,
 } from "lucide-react";
 
-const intersections = [
-  { name: "Central Junction", area: "Town Center", vehicles: 245, speed: 24, level: "Heavy", signal: "Adaptive" },
-  { name: "Market Area", area: "Commercial Zone", vehicles: 182, speed: 36, level: "Moderate", signal: "Fixed" },
-  { name: "Bus Station Area", area: "Transport Zone", vehicles: 310, speed: 18, level: "Severe", signal: "Adaptive" },
-  { name: "Hospital Area", area: "Public Service Zone", vehicles: 125, speed: 42, level: "Clear", signal: "Adaptive" },
-  { name: "School Area", area: "Education Zone", vehicles: 198, speed: 29, level: "Moderate", signal: "Fixed" },
+import CityMap from "./components/CityMap";
+import TrafficChart from "./components/TrafficChart";
+
+import type {
+  DashboardData,
+  Incident,
+  IncidentSeverity,
+  IncidentStatus,
+  Intersection,
+  TrafficRecommendation,
+} from "./types";
+
+/* -------------------------------------------------------
+   CONFIGURATION
+------------------------------------------------------- */
+
+const severityOptions: IncidentSeverity[] = [
+  "low",
+  "medium",
+  "high",
+  "critical",
 ];
 
-const incidents = [
-  { title: "Traffic congestion", place: "Bus Station Area", time: "10 min ago", severity: "High", status: "Investigating" },
-  { title: "Road obstruction", place: "Central Junction", time: "25 min ago", severity: "Medium", status: "Open" },
-  { title: "Heavy vehicle movement", place: "Market Area", time: "42 min ago", severity: "Low", status: "Monitoring" },
+const emptyIntersections: Intersection[] = [];
+
+const communityProblemTypes = [
+  "Road damage",
+  "Drainage or flooding",
+  "Pedestrian safety",
+  "Traffic or transport problem",
+  "Road obstruction",
+  "Street lighting",
+  "Other",
 ];
 
-const chartValues = [35, 48, 42, 64, 52, 72, 60, 84, 67, 75, 57, 70];
+type Theme = "light" | "dark";
+type Panel = "help" | "notifications" | null;
+type IntersectionFilter = "all" | "congested" | "clear";
+type IntersectionSort = "priority" | "speed" | "name";
+type DashboardSection =
+  | "overview"
+  | "intersections"
+  | "incidents"
+  | "insights";
 
-type Level = "Clear" | "Moderate" | "Heavy" | "Severe";
+/* -------------------------------------------------------
+   API HELPER
+------------------------------------------------------- */
 
-function Status({ level }: { level: string }) {
-  return <span className={`status status-${level.toLowerCase()}`}>{level}</span>;
+async function api<T>(
+  path: string,
+  init?: RequestInit,
+): Promise<T> {
+  const response = await fetch(path, {
+    ...init,
+    headers: {
+      "Content-Type": "application/json",
+      ...init?.headers,
+    },
+  });
+
+  if (!response.ok) {
+    const body = (await response
+      .json()
+      .catch(() => null)) as { error?: string } | null;
+
+    throw new Error(
+      body?.error ?? `Request failed (${response.status}).`,
+    );
+  }
+
+  return response.json() as Promise<T>;
 }
 
+/* -------------------------------------------------------
+   DATE AND TIME HELPERS
+------------------------------------------------------- */
+
+function formatTime(value: string): string {
+  if (!value) return "Recently";
+
+  const hasTimezone =
+    /(?:Z|[+-]\d{2}:\d{2})$/i.test(value);
+
+  const normalized = value.includes(" ")
+    ? value.replace(" ", "T")
+    : value;
+
+  const date = new Date(
+    hasTimezone
+      ? normalized
+      : `${normalized}Z`,
+  );
+
+  if (Number.isNaN(date.getTime())) {
+    return "Recently";
+  }
+
+  const difference = Date.now() - date.getTime();
+
+  if (difference < 0) return "Just now";
+
+  const minutes = Math.floor(difference / 60_000);
+
+  if (minutes < 1) return "Just now";
+
+  if (minutes < 60) {
+    return `${minutes} min ago`;
+  }
+
+  const hours = Math.floor(minutes / 60);
+
+  if (hours < 24) {
+    return `${hours} hr ago`;
+  }
+
+  const days = Math.floor(hours / 24);
+
+  return `${days} day${days === 1 ? "" : "s"} ago`;
+}
+
+function metricLabel(
+  congestion: Intersection["congestion"],
+): string {
+  return congestion.toLowerCase();
+}
+
+/* -------------------------------------------------------
+   DASHBOARD COMPARISON
+------------------------------------------------------- */
+
+function sameDashboardContent(
+  left: DashboardData,
+  right: DashboardData,
+): boolean {
+  const {
+    updatedAt: _leftUpdatedAt,
+    ...leftContent
+  } = left;
+
+  const {
+    updatedAt: _rightUpdatedAt,
+    ...rightContent
+  } = right;
+
+  return (
+    JSON.stringify(leftContent) ===
+    JSON.stringify(rightContent)
+  );
+}
+
+/* -------------------------------------------------------
+   MAIN APPLICATION
+------------------------------------------------------- */
+
 export default function App() {
-  const [active, setActive] = useState("Overview");
-  const [mobileOpen, setMobileOpen] = useState(false);
+  /* THEME */
+
+  const [theme, setTheme] = useState<Theme>(() => {
+    const savedTheme =
+      window.localStorage.getItem("aykel-connect-theme") ??
+      window.localStorage.getItem("flowcity-theme");
+
+    if (
+      savedTheme === "light" ||
+      savedTheme === "dark"
+    ) {
+      return savedTheme;
+    }
+
+    return window.matchMedia(
+      "(prefers-color-scheme: dark)",
+    ).matches
+      ? "dark"
+      : "light";
+  });
+
+  /* DASHBOARD DATA */
+
+  const [dashboard, setDashboard] =
+    useState<DashboardData | null>(null);
+
+  const [selectedId, setSelectedId] =
+    useState<string | null>(null);
+
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [liveConnected, setLiveConnected] = useState(false);
+
+  const [focusedIncidentId, setFocusedIncidentId] =
+    useState<string | null>(null);
+
+  const [error, setError] = useState("");
   const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState("All");
-  const [period, setPeriod] = useState("Today");
-  const [notifications, setNotifications] = useState(true);
 
-  const filteredIntersections = useMemo(() => {
-    return intersections.filter((item) => {
-      const matchesSearch =
-        item.name.toLowerCase().includes(search.toLowerCase()) ||
-        item.area.toLowerCase().includes(search.toLowerCase());
+  /* REPORT FORM */
 
-      const matchesFilter = filter === "All" || item.level === filter;
-      return matchesSearch && matchesFilter;
+  const [showIncidentForm, setShowIncidentForm] =
+    useState(false);
+
+  const [formLocation, setFormLocation] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  /* NOTIFICATIONS */
+
+  const [notice, setNotice] = useState("");
+  const [noticeError, setNoticeError] = useState(false);
+
+  const [mobileNavOpen, setMobileNavOpen] =
+    useState(false);
+
+  const [openPanel, setOpenPanel] =
+    useState<Panel>(null);
+
+  /* FILTERS */
+
+  const [incidentSeverity, setIncidentSeverity] =
+    useState<"all" | IncidentSeverity>("all");
+
+  const [intersectionFilter, setIntersectionFilter] =
+    useState<IntersectionFilter>("all");
+
+  const [intersectionSort, setIntersectionSort] =
+    useState<IntersectionSort>("priority");
+
+  const [chartRange, setChartRange] =
+    useState<6 | 12>(12);
+
+  const [activeSection, setActiveSection] =
+    useState<DashboardSection>("overview");
+
+  const [now, setNow] = useState(() => new Date());
+
+  /* -------------------------------------------------------
+     THEME EFFECT
+  ------------------------------------------------------- */
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    document.documentElement.style.colorScheme = theme;
+
+    window.localStorage.setItem(
+      "aykel-connect-theme",
+      theme,
+    );
+  }, [theme]);
+
+  /* -------------------------------------------------------
+     ESCAPE KEY
+  ------------------------------------------------------- */
+
+  useEffect(() => {
+    if (!showIncidentForm && !openPanel) return;
+
+    function handleEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        if (!saving) {
+          setShowIncidentForm(false);
+        }
+
+        setOpenPanel(null);
+      }
+    }
+
+    window.addEventListener("keydown", handleEscape);
+
+    return () => {
+      window.removeEventListener(
+        "keydown",
+        handleEscape,
+      );
+    };
+  }, [openPanel, showIncidentForm, saving]);
+
+  /* -------------------------------------------------------
+     CLOCK
+  ------------------------------------------------------- */
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setNow(new Date());
+    }, 30_000);
+
+    return () => window.clearInterval(timer);
+  }, []);
+
+  /* -------------------------------------------------------
+     ACTIVE SECTION TRACKING
+  ------------------------------------------------------- */
+
+  useEffect(() => {
+    const sectionIds: DashboardSection[] = [
+      "intersections",
+      "incidents",
+      "insights",
+    ];
+
+    const sections = sectionIds
+      .map((id) => document.getElementById(id))
+      .filter(
+        (section): section is HTMLElement =>
+          section !== null,
+      );
+
+    if (sections.length === 0) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const current = entries
+          .filter((entry) => entry.isIntersecting)
+          .sort(
+            (left, right) =>
+              left.boundingClientRect.top -
+              right.boundingClientRect.top,
+          )[0];
+
+        const section =
+          current &&
+          sectionIds.find(
+            (id) => id === current.target.id,
+          );
+
+        if (section) {
+          setActiveSection(section);
+        } else if (window.scrollY < 240) {
+          setActiveSection("overview");
+        }
+      },
+      {
+        rootMargin: "-80px 0px -65% 0px",
+      },
+    );
+
+    sections.forEach((section) =>
+      observer.observe(section),
+    );
+
+    return () => observer.disconnect();
+  }, []);
+
+  /* -------------------------------------------------------
+     REFRESH DASHBOARD
+  ------------------------------------------------------- */
+
+  const refresh = useCallback(
+    async (quiet = false) => {
+      if (quiet) {
+        setRefreshing(true);
+      } else {
+        setLoading(true);
+      }
+
+      try {
+        const data = await api<DashboardData>(
+          "/api/dashboard",
+        );
+
+        setDashboard((current) =>
+          current &&
+          sameDashboardContent(current, data)
+            ? current
+            : data,
+        );
+
+        setError("");
+      } catch (cause) {
+        setError(
+          cause instanceof Error
+            ? cause.message
+            : "Unable to load dashboard data.",
+        );
+      } finally {
+        setLoading(false);
+        setRefreshing(false);
+      }
+    },
+    [],
+  );
+
+  /* -------------------------------------------------------
+     INITIAL LOAD AND LIVE EVENTS
+  ------------------------------------------------------- */
+
+  useEffect(() => {
+    void refresh();
+
+    const stream = new EventSource("/api/events");
+
+    stream.onopen = () => {
+      setLiveConnected(true);
+    };
+
+    stream.onmessage = (event) => {
+      try {
+        const data = JSON.parse(
+          event.data,
+        ) as DashboardData;
+
+        setDashboard((current) =>
+          current &&
+          sameDashboardContent(current, data)
+            ? current
+            : data,
+        );
+
+        setError("");
+        setLoading(false);
+      } catch (cause) {
+        setError(
+          cause instanceof Error
+            ? `Invalid live dashboard update: ${cause.message}`
+            : "Invalid live dashboard update.",
+        );
+      }
+    };
+
+    stream.onerror = () => {
+      setLiveConnected(false);
+    };
+
+    return () => {
+      stream.close();
+    };
+  }, [refresh]);
+
+  /* -------------------------------------------------------
+     TOAST NOTIFICATION
+  ------------------------------------------------------- */
+
+  useEffect(() => {
+    if (!notice) return;
+
+    const timeout = window.setTimeout(() => {
+      setNotice("");
+    }, 4000);
+
+    return () => window.clearTimeout(timeout);
+  }, [notice]);
+
+  function announce(
+    message: string,
+    isError = false,
+  ) {
+    setNoticeError(isError);
+    setNotice(message);
+  }
+
+  /* -------------------------------------------------------
+     REPORT FORM OPENING
+  ------------------------------------------------------- */
+
+  function openIncidentForm() {
+    setFormLocation("");
+    setShowIncidentForm(true);
+  }
+
+  /* -------------------------------------------------------
+     DASHBOARD DERIVED DATA
+  ------------------------------------------------------- */
+
+  const selected =
+    dashboard?.intersections.find(
+      (item) => item.id === selectedId,
+    ) ?? null;
+
+  const activeIncidents = useMemo(
+    () =>
+      dashboard?.incidents.filter(
+        (item) => item.status !== "resolved",
+      ) ?? [],
+    [dashboard?.incidents],
+  );
+
+  const visibleIncidents = useMemo(
+    () =>
+      activeIncidents.filter(
+        (item) =>
+          incidentSeverity === "all" ||
+          item.severity === incidentSeverity,
+      ),
+    [activeIncidents, incidentSeverity],
+  );
+
+  const visibleTrend = useMemo(
+    () =>
+      (dashboard?.trend ?? []).slice(-chartRange),
+    [dashboard?.trend, chartRange],
+  );
+
+  const averageTrend = useMemo(
+    () =>
+      visibleTrend.length
+        ? Math.round(
+            visibleTrend.reduce(
+              (total, point) => total + point.volume,
+              0,
+            ) / visibleTrend.length,
+          )
+        : null,
+    [visibleTrend],
+  );
+
+  /* -------------------------------------------------------
+     COMMUNITY REPORT METRICS
+  ------------------------------------------------------- */
+
+  const totalReports =
+    dashboard?.incidents.length ?? 0;
+
+  const openReports =
+    dashboard?.incidents.filter(
+      (item) => item.status === "open",
+    ).length ?? 0;
+
+  const investigatingReports =
+    dashboard?.incidents.filter(
+      (item) => item.status === "investigating",
+    ).length ?? 0;
+
+  const resolvedReports =
+    dashboard?.incidents.filter(
+      (item) => item.status === "resolved",
+    ).length ?? 0;
+
+  const criticalReports =
+    dashboard?.incidents.filter(
+      (item) =>
+        item.severity === "critical" &&
+        item.status !== "resolved",
+    ).length ?? 0;
+
+  /* -------------------------------------------------------
+     INTERSECTION SEARCH, FILTER AND SORT
+  ------------------------------------------------------- */
+
+  const filtered = useMemo(() => {
+    if (!dashboard) return [];
+
+    const needle = search.trim().toLowerCase();
+
+    const matches = dashboard.intersections.filter(
+      (item) => {
+        const matchesSearch =
+          !needle ||
+          `${item.name} ${item.district}`
+            .toLowerCase()
+            .includes(needle);
+
+        const matchesTraffic =
+          intersectionFilter === "all" ||
+          (intersectionFilter === "congested" &&
+            (item.congestion === "Heavy" ||
+              item.congestion === "Severe")) ||
+          (intersectionFilter === "clear" &&
+            (item.congestion === "Clear" ||
+              item.congestion === "Moderate"));
+
+        return matchesSearch && matchesTraffic;
+      },
+    );
+
+    const congestionRank: Record<
+      Intersection["congestion"],
+      number
+    > = {
+      Severe: 0,
+      Heavy: 1,
+      Moderate: 2,
+      Clear: 3,
+    };
+
+    return matches.sort((left, right) => {
+      if (intersectionSort === "speed") {
+        return (
+          right.speed - left.speed ||
+          left.name.localeCompare(right.name)
+        );
+      }
+
+      if (intersectionSort === "name") {
+        return left.name.localeCompare(right.name);
+      }
+
+      return (
+        congestionRank[left.congestion] -
+          congestionRank[right.congestion] ||
+        left.speed - right.speed ||
+        left.name.localeCompare(right.name)
+      );
     });
-  }, [search, filter]);
+  }, [
+    dashboard,
+    intersectionFilter,
+    intersectionSort,
+    search,
+  ]);
 
-  const navItems = [
-    { name: "Overview", icon: LayoutDashboard },
-    { name: "Traffic Map", icon: MapPin },
-    { name: "Intersections", icon: Navigation },
-    { name: "Incidents", icon: ShieldAlert },
-    { name: "Analytics", icon: Activity },
-  ];
+  /* -------------------------------------------------------
+     SELECT INTERSECTION
+  ------------------------------------------------------- */
 
-  const totalVehicles = intersections.reduce((sum, item) => sum + item.vehicles, 0);
-  const severeCount = intersections.filter((item) => item.level === "Severe").length;
+  const selectIntersection = useCallback(
+    (id: string) => {
+      setSelectedId(id);
+
+      window.setTimeout(() => {
+        document
+          .getElementById("intersections")
+          ?.scrollIntoView({
+            behavior: "smooth",
+            block: "center",
+          });
+      }, 40);
+    },
+    [],
+  );
+
+  /* -------------------------------------------------------
+     CSV EXPORT
+  ------------------------------------------------------- */
+
+  function exportDashboard() {
+    if (!dashboard) return;
+
+    const generatedAt = new Date().toISOString();
+
+    const headers = [
+      "record_type",
+      "generated_at",
+      "id",
+      "name_or_location",
+      "district",
+      "congestion",
+      "speed_mph",
+      "vehicles_per_hour",
+      "signal_mode",
+      "incident_type",
+      "severity",
+      "status",
+      "reported_at",
+      "description",
+    ];
+
+    const cell = (
+      value: string | number | null,
+    ) => {
+      const text =
+        value === null ? "" : String(value);
+
+      const safeText =
+        typeof value === "string" &&
+        /^[=+\-@\t\r]/.test(text)
+          ? `'${text}`
+          : text;
+
+      return `"${safeText.replace(/"/g, '""')}"`;
+    };
+
+    const rows = [
+      headers,
+
+      ...dashboard.intersections.map(
+        (intersection) => [
+          "sample_intersection",
+          generatedAt,
+          intersection.id,
+          intersection.name,
+          intersection.district,
+          intersection.congestion,
+          intersection.speed,
+          intersection.vehiclesPerHour,
+          intersection.mode,
+          "",
+          "",
+          "",
+          "",
+          "",
+        ],
+      ),
+
+      ...dashboard.incidents.map((incident) => [
+        "community_report",
+        generatedAt,
+        incident.id,
+        incident.location,
+        incident.intersectionId ?? "",
+        "",
+        "",
+        "",
+        "",
+        incident.type,
+        incident.severity,
+        incident.status,
+        incident.reportedAt,
+        incident.description,
+      ]),
+    ];
+
+    const csv = rows
+      .map((row) => row.map(cell).join(","))
+      .join("\r\n");
+
+    const url = URL.createObjectURL(
+      new Blob([`\uFEFF${csv}`], {
+        type: "text/csv;charset=utf-8",
+      }),
+    );
+
+    const link = document.createElement("a");
+
+    link.href = url;
+    link.download =
+      `aykel-community-reports-${generatedAt.slice(0, 10)}.csv`;
+
+    link.click();
+
+    window.setTimeout(() => {
+      URL.revokeObjectURL(url);
+    }, 1000);
+
+    announce("Community report downloaded.");
+  }
+
+  /* -------------------------------------------------------
+     FOCUS INCIDENT
+  ------------------------------------------------------- */
+
+  function focusIncident(incident: Incident) {
+    setOpenPanel(null);
+    setIncidentSeverity("all");
+    setFocusedIncidentId(String(incident.id));
+
+    window.setTimeout(() => {
+      const row = document.getElementById(
+        `incident-${incident.id}`,
+      );
+
+      row?.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
+
+      row?.focus();
+    }, 40);
+  }
+
+  /* -------------------------------------------------------
+     DEMO SIGNAL CONTROL
+  ------------------------------------------------------- */
+
+  async function changeSignalMode(
+    intersection: Intersection,
+  ) {
+    try {
+      await api<Intersection>(
+        `/api/intersections/${intersection.id}/optimize`,
+        {
+          method: "POST",
+        },
+      );
+
+      announce(
+        `Demo signal setting updated for ${intersection.name}.`,
+      );
+
+      await refresh(true);
+    } catch (cause) {
+      announce(
+        cause instanceof Error
+          ? cause.message
+          : "Could not update the demo signal setting.",
+        true,
+      );
+    }
+  }
+
+  /* -------------------------------------------------------
+     CHANGE COMMUNITY REPORT STATUS
+  ------------------------------------------------------- */
+
+  async function changeIncidentStatus(
+    incident: Incident,
+    status: IncidentStatus,
+  ) {
+    try {
+      await api<Incident>(
+        `/api/incidents/${incident.id}/status`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({ status }),
+        },
+      );
+
+      announce(
+        status === "resolved"
+          ? "Community report marked as resolved."
+          : "Community report status updated.",
+      );
+
+      await refresh(true);
+    } catch (cause) {
+      announce(
+        cause instanceof Error
+          ? cause.message
+          : "Could not update report status.",
+        true,
+      );
+    }
+  }
+
+  /* -------------------------------------------------------
+     SUBMIT COMMUNITY REPORT
+  ------------------------------------------------------- */
+
+  async function submitIncident(
+    event: FormEvent<HTMLFormElement>,
+  ) {
+    event.preventDefault();
+
+    if (saving) return;
+
+    setSaving(true);
+
+    const form = new FormData(event.currentTarget);
+
+    try {
+      await api<Incident>("/api/incidents", {
+        method: "POST",
+        body: JSON.stringify({
+          intersectionId: null,
+          location: String(
+            form.get("location") ?? "",
+          ).trim(),
+          type: String(form.get("type") ?? ""),
+          severity: String(
+            form.get("severity") ?? "medium",
+          ),
+          description: String(
+            form.get("description") ?? "",
+          ).trim(),
+        }),
+      });
+
+      setShowIncidentForm(false);
+      setFormLocation("");
+
+      announce(
+        "Community problem submitted successfully.",
+      );
+
+      await refresh(true);
+    } catch (cause) {
+      announce(
+        cause instanceof Error
+          ? cause.message
+          : "Could not submit the community report.",
+        true,
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  /* -------------------------------------------------------
+     RECOMMENDATIONS
+  ------------------------------------------------------- */
+
+  function openRecommendation(
+    recommendation: TrafficRecommendation,
+  ) {
+    if (recommendation.kind === "incident") {
+      setIncidentSeverity("all");
+
+      setFocusedIncidentId(
+        recommendation.targetId,
+      );
+
+      document
+        .getElementById("incidents")
+        ?.scrollIntoView({
+          behavior: "smooth",
+          block: "center",
+        });
+
+      window.setTimeout(() => {
+        const row = document.getElementById(
+          `incident-${recommendation.targetId}`,
+        );
+
+        row?.scrollIntoView({
+          behavior: "smooth",
+          block: "center",
+        });
+
+        row?.focus();
+      }, 250);
+
+      return;
+    }
+
+    setSelectedId(recommendation.targetId);
+
+    window.setTimeout(() => {
+      document
+        .getElementById("intersections")
+        ?.scrollIntoView({
+          behavior: "smooth",
+          block: "center",
+        });
+    }, 40);
+  }
+
+  /* -------------------------------------------------------
+     DISPLAY VALUES
+  ------------------------------------------------------- */
+
+  const summary = dashboard?.summary;
+
+  const timeDisplay = now.toLocaleTimeString(
+    "en-US",
+    {
+      hour: "numeric",
+      minute: "2-digit",
+    },
+  );
+
+  const greeting =
+    now.getHours() < 12
+      ? "morning"
+      : now.getHours() < 17
+        ? "afternoon"
+        : "evening";
+
+  const dateDisplay = now
+    .toLocaleDateString("en-US", {
+      weekday: "long",
+      month: "long",
+      day: "numeric",
+    })
+    .toUpperCase();
+
+  /* -------------------------------------------------------
+     UI
+  ------------------------------------------------------- */
 
   return (
     <div className="app-shell">
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Manrope:wght@400;500;600;700;800&display=swap');
+      {/* SIDEBAR */}
 
-        * { box-sizing: border-box; }
-        body { margin: 0; background: #f4f7fb; font-family: 'DM Sans', sans-serif; color: #17243a; }
-        button, input, select { font: inherit; }
-        button { cursor: pointer; }
-
-        .app-shell { min-height: 100vh; display: flex; background: #f4f7fb; }
-        .sidebar { width: 250px; background: #101e35; color: #fff; padding: 25px 17px; display: flex; flex-direction: column; flex-shrink: 0; }
-        .brand { display: flex; align-items: center; gap: 12px; padding: 0 9px 32px; }
-        .brand-icon { width: 42px; height: 42px; border-radius: 13px; display: grid; place-items: center; background: #1769e8; }
-        .brand-name { font-family: Manrope, sans-serif; font-size: 17px; font-weight: 800; letter-spacing: -.5px; }
-        .brand-sub { color: #91a2bb; font-size: 11px; margin-top: 3px; }
-        .nav-label { color: #71839d; font-size: 10px; font-weight: 800; letter-spacing: 1.5px; padding: 14px 12px 11px; }
-        .nav-item { width: 100%; display: flex; align-items: center; gap: 13px; color: #aab9ce; border: 0; background: transparent; padding: 12px 13px; border-radius: 9px; margin: 3px 0; font-size: 13px; text-align: left; transition: .2s; }
-        .nav-item:hover, .nav-item.active { color: #fff; background: #1d3558; }
-        .nav-item.active { box-shadow: inset 3px 0 #3987ff; }
-        .nav-item.active svg { color: #66a4ff; }
-        .sidebar-bottom { margin-top: auto; }
-        .system-card { background: #1a304e; border: 1px solid #29415f; border-radius: 12px; padding: 14px; margin: 16px 3px; }
-        .system-title { font-size: 12px; font-weight: 700; margin-bottom: 9px; }
-        .system-line { display: flex; align-items: center; gap: 7px; color: #a9bad0; font-size: 11px; }
-        .green-dot { width: 7px; height: 7px; border-radius: 50%; background: #35d39a; box-shadow: 0 0 0 4px #35d39a20; }
-        .sidebar-footer { color: #72849d; font-size: 10px; padding: 12px; line-height: 1.7; }
-
-        .main { flex: 1; min-width: 0; }
-        .topbar { height: 76px; background: #fff; border-bottom: 1px solid #e8edf4; display: flex; align-items: center; justify-content: space-between; padding: 0 32px; gap: 15px; }
-        .top-left { display: flex; align-items: center; gap: 14px; }
-        .page-title { font: 800 18px Manrope, sans-serif; }
-        .breadcrumb { color: #8996a9; font-size: 11px; margin-top: 4px; }
-        .top-actions { display: flex; align-items: center; gap: 12px; }
-        .search-box { display: flex; align-items: center; gap: 8px; border: 1px solid #e7ebf2; border-radius: 9px; padding: 9px 12px; width: 220px; color: #8794a8; }
-        .search-box input { border: 0; outline: 0; width: 100%; min-width: 0; font-size: 12px; color: #25334a; }
-        .icon-btn { width: 37px; height: 37px; border: 1px solid #e7ebf2; background: white; border-radius: 9px; color: #5d6b80; display: grid; place-items: center; position: relative; }
-        .notification-dot { width: 7px; height: 7px; border-radius: 50%; background: #ef5a67; position: absolute; right: 8px; top: 7px; }
-        .profile { display: flex; align-items: center; gap: 9px; padding-left: 10px; border-left: 1px solid #edf0f5; }
-        .avatar { width: 35px; height: 35px; border-radius: 50%; display: grid; place-items: center; background: #e5efff; color: #1769e8; font-weight: 800; font-size: 12px; }
-        .profile-name { font-size: 11px; font-weight: 700; }
-        .profile-role { font-size: 10px; color: #8996a9; margin-top: 3px; }
-        .mobile-menu { display: none; }
-
-        .content { padding: 27px 32px 40px; max-width: 1600px; margin: auto; }
-        .welcome { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 23px; }
-        .welcome h1 { font: 800 23px Manrope, sans-serif; margin: 0; letter-spacing: -.7px; }
-        .welcome p { color: #8592a5; font-size: 12px; margin: 7px 0 0; }
-        .welcome-actions { display: flex; gap: 9px; align-items: center; }
-        .date-select { background: white; border: 1px solid #e5eaf1; padding: 10px 13px; border-radius: 9px; font-size: 11px; color: #536178; outline: 0; }
-        .primary-btn { background: #1769e8; color: white; border: 0; padding: 11px 15px; border-radius: 9px; display: flex; align-items: center; gap: 8px; font-size: 11px; font-weight: 700; }
-        .primary-btn:hover { background: #0d56c7; }
-
-        .demo-banner { display: flex; align-items: center; gap: 9px; background: #fff8e8; border: 1px solid #f3e2b8; border-radius: 10px; color: #87651c; font-size: 11px; padding: 11px 14px; margin-bottom: 18px; }
-        .metric-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 15px; margin-bottom: 19px; }
-        .card { background: #fff; border: 1px solid #e9edf3; border-radius: 13px; box-shadow: 0 3px 12px #17243a05; }
-        .metric-card { padding: 17px 18px; }
-        .metric-top { display: flex; justify-content: space-between; align-items: center; }
-        .metric-label { color: #8390a4; font-size: 11px; font-weight: 600; }
-        .metric-icon { width: 35px; height: 35px; display: grid; place-items: center; border-radius: 10px; }
-        .blue { background: #eaf2ff; color: #2875e8; }
-        .green { background: #e8f8f1; color: #17a574; }
-        .orange { background: #fff3e6; color: #e58a27; }
-        .red { background: #ffeded; color: #e4535e; }
-        .metric-value { font: 800 25px Manrope, sans-serif; margin-top: 13px; letter-spacing: -.7px; }
-        .metric-foot { display: flex; align-items: center; gap: 5px; font-size: 10px; color: #8b97a8; margin-top: 7px; }
-        .trend-up { color: #16a477; font-weight: 700; }
-        .trend-down { color: #df5964; font-weight: 700; }
-
-        .section-grid { display: grid; grid-template-columns: minmax(0, 1.65fr) minmax(270px, .9fr); gap: 17px; margin-bottom: 18px; }
-        .card-header { display: flex; align-items: center; justify-content: space-between; padding: 17px 19px; border-bottom: 1px solid #edf0f5; gap: 10px; }
-        .card-title { font: 800 13px Manrope, sans-serif; }
-        .card-subtitle { color: #98a3b3; font-size: 10px; margin-top: 4px; }
-        .text-link { color: #1769e8; font-size: 10px; font-weight: 700; border: 0; background: none; }
-        .map-area { padding: 15px; }
-        .map-canvas { height: 285px; position: relative; overflow: hidden; border-radius: 10px; background: #edf3f2; }
-        .map-canvas:before { content: ""; position: absolute; inset: 0; opacity: .65; background-image: linear-gradient(30deg, transparent 48%, #fff 49%, #fff 52%, transparent 53%), linear-gradient(120deg, transparent 47%, #fff 48%, #fff 51%, transparent 52%); background-size: 105px 90px, 135px 110px; }
-        .map-road { position: absolute; height: 12px; background: #fff; border: 1px solid #dce5e2; border-radius: 10px; transform-origin: center; }
-        .road-one { width: 120%; top: 48%; left: -10%; transform: rotate(-13deg); }
-        .road-two { width: 90%; top: 47%; left: 15%; transform: rotate(55deg); }
-        .road-three { width: 80%; top: 22%; left: 8%; transform: rotate(24deg); }
-        .road-four { width: 75%; top: 75%; left: 28%; transform: rotate(-43deg); }
-        .map-river { position: absolute; width: 120%; height: 22px; background: #cfe7ed; top: 86%; left: -10%; transform: rotate(-17deg); opacity: .7; }
-        .map-label { position: absolute; font-size: 9px; color: #879a98; font-weight: 700; letter-spacing: .3px; }
-        .map-label.one { top: 14%; left: 8%; }
-        .map-label.two { top: 76%; right: 7%; }
-        .map-label.three { top: 12%; right: 8%; }
-        .map-label.four { bottom: 9%; left: 11%; }
-        .map-pin { position: absolute; transform: translate(-50%, -50%); display: flex; align-items: center; gap: 5px; }
-        .pin-dot { width: 13px; height: 13px; border: 3px solid white; border-radius: 50%; box-shadow: 0 1px 5px #1a2d3b55; }
-        .pin-heavy { background: #ed9b36; }
-        .pin-severe { background: #e34f5c; }
-        .pin-clear { background: #19a879; }
-        .pin-moderate { background: #e7b94a; }
-        .pin-label { font-size: 9px; background: white; padding: 5px 7px; border-radius: 5px; box-shadow: 0 2px 5px #17243a13; white-space: nowrap; color: #526174; font-weight: 700; }
-        .map-legend { display: flex; flex-wrap: wrap; gap: 14px; padding: 13px 2px 0; color: #7f8c9e; font-size: 10px; }
-        .legend-item { display: flex; align-items: center; gap: 6px; }
-        .legend-dot { width: 7px; height: 7px; border-radius: 50%; }
-
-        .weather-card { padding: 18px; background: linear-gradient(135deg, #17365e, #1769b9); color: white; border: 0; }
-        .weather-top { display: flex; justify-content: space-between; align-items: center; color: #d3e6ff; font-size: 11px; }
-        .weather-temp { font: 800 35px Manrope, sans-serif; margin-top: 15px; }
-        .weather-description { font-size: 11px; color: #d3e6ff; margin-top: 2px; }
-        .weather-bottom { border-top: 1px solid #ffffff30; display: flex; justify-content: space-between; margin-top: 19px; padding-top: 13px; color: #d3e6ff; font-size: 10px; }
-        .signal-card { padding: 17px; margin-top: 15px; }
-        .signal-heading { display: flex; justify-content: space-between; align-items: center; font-size: 12px; font-weight: 800; }
-        .signal-status { display: flex; align-items: center; gap: 9px; margin-top: 16px; }
-        .signal-light { width: 43px; height: 43px; border-radius: 12px; display: grid; place-items: center; background: #fff3e7; color: #e68b2a; }
-        .signal-number { font: 800 21px Manrope, sans-serif; }
-        .signal-caption { color: #8a97a8; font-size: 10px; margin-top: 3px; }
-
-        .chart-card { padding-bottom: 15px; }
-        .chart-wrap { padding: 15px 19px 0; }
-        .chart-svg { width: 100%; height: 175px; overflow: visible; }
-        .chart-gridline { stroke: #edf0f5; stroke-width: 1; }
-        .chart-area { fill: url(#chartFill); }
-        .chart-line { fill: none; stroke: #2875e8; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
-        .chart-point { fill: white; stroke: #2875e8; stroke-width: 2; }
-        .chart-labels { display: flex; justify-content: space-between; color: #9aa5b4; font-size: 9px; padding: 5px 2px 0; }
-        .chart-summary { display: flex; gap: 20px; padding: 12px 19px 0; }
-        .chart-stat strong { font: 800 16px Manrope, sans-serif; display: block; }
-        .chart-stat span { color: #929eae; font-size: 9px; }
-
-        .table-card { overflow: hidden; }
-        .table-toolbar { display: flex; align-items: center; gap: 8px; }
-        .filter-select { border: 1px solid #e8edf3; background: white; border-radius: 7px; padding: 7px 9px; color: #65748a; font-size: 10px; outline: 0; }
-        .table-scroll { overflow-x: auto; }
-        table { width: 100%; border-collapse: collapse; min-width: 570px; }
-        th { text-align: left; color: #98a3b2; font-size: 9px; letter-spacing: .6px; text-transform: uppercase; font-weight: 800; padding: 13px 18px; background: #fafbfd; }
-        td { padding: 14px 18px; border-top: 1px solid #f0f2f6; font-size: 11px; color: #5f6d81; }
-        .intersection-name { color: #25344b; font-weight: 700; }
-        .intersection-area { color: #9aa5b3; font-size: 9px; margin-top: 4px; }
-        .status { display: inline-block; padding: 5px 8px; border-radius: 20px; font-size: 9px; font-weight: 700; white-space: nowrap; }
-        .status-clear { background: #e7f7ef; color: #159467; }
-        .status-moderate { background: #fff6df; color: #a77a18; }
-        .status-heavy { background: #fff0e4; color: #d77a27; }
-        .status-severe { background: #ffebed; color: #d94c58; }
-        .status-high { background: #ffebed; color: #d94c58; }
-        .status-medium { background: #fff6df; color: #a77a18; }
-        .status-low { background: #e7f7ef; color: #159467; }
-        .status-open { background: #ffebed; color: #d94c58; }
-        .status-investigating { background: #fff6df; color: #a77a18; }
-        .status-monitoring { background: #e7f0ff; color: #3475cb; }
-
-        .bottom-grid { display: grid; grid-template-columns: 1.25fr .9fr; gap: 17px; margin-top: 18px; }
-        .incident-list { padding: 4px 18px 12px; }
-        .incident-row { display: flex; align-items: center; gap: 11px; padding: 12px 0; border-bottom: 1px solid #f0f2f6; }
-        .incident-row:last-child { border-bottom: 0; }
-        .incident-icon { width: 34px; height: 34px; border-radius: 9px; background: #fff0ed; color: #df6557; display: grid; place-items: center; flex-shrink: 0; }
-        .incident-main { flex: 1; min-width: 0; }
-        .incident-name { font-size: 11px; font-weight: 700; color: #35435a; }
-        .incident-meta { font-size: 9px; color: #9aa5b3; margin-top: 4px; }
-        .incident-right { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
-        .recommendation { padding: 17px; }
-        .recommendation-item { display: flex; gap: 10px; padding: 12px 0; border-bottom: 1px solid #f0f2f6; }
-        .recommendation-item:last-child { border: 0; }
-        .recommendation-icon { color: #2473e5; background: #edf4ff; border-radius: 8px; width: 31px; height: 31px; display: grid; place-items: center; flex-shrink: 0; }
-        .recommendation-title { font-size: 11px; font-weight: 700; }
-        .recommendation-text { color: #909cad; font-size: 10px; line-height: 1.5; margin-top: 4px; }
-
-        .empty-state { text-align: center; color: #9aa5b3; padding: 30px; font-size: 11px; }
-        .footer { text-align: center; color: #a0aaba; font-size: 10px; padding: 23px 0 0; }
-
-        @media(max-width: 1100px) {
-          .sidebar { width: 215px; }
-          .content { padding: 24px 21px; }
-          .topbar { padding: 0 21px; }
-          .metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-        }
-        @media(max-width: 760px) {
-          .sidebar { position: fixed; z-index: 20; inset: 0 auto 0 0; width: 260px; transform: translateX(-105%); transition: transform .25s; box-shadow: 15px 0 40px #101e3530; }
-          .sidebar.open { transform: translateX(0); }
-          .mobile-menu { display: grid; }
-          .topbar { height: 66px; padding: 0 14px; }
-          .top-actions { gap: 7px; }
-          .search-box { width: 150px; }
-          .profile-info, .profile-chevron { display: none; }
-          .content { padding: 21px 14px 30px; }
-          .welcome { flex-direction: column; }
-          .welcome h1 { font-size: 20px; }
-          .section-grid, .bottom-grid { grid-template-columns: 1fr; }
-          .map-canvas { height: 250px; }
-        }
-        @media(max-width: 480px) {
-          .topbar { gap: 8px; }
-          .page-title { font-size: 14px; }
-          .breadcrumb { font-size: 9px; }
-          .search-box { display: none; }
-          .profile { padding-left: 6px; }
-          .metric-grid { gap: 9px; }
-          .metric-card { padding: 13px; }
-          .metric-value { font-size: 21px; }
-          .metric-label { font-size: 10px; }
-          .metric-foot { font-size: 9px; }
-          .welcome-actions { width: 100%; }
-          .date-select, .primary-btn { flex: 1; justify-content: center; }
-          .card-header { padding: 14px; }
-          .map-area { padding: 10px; }
-          .map-label { font-size: 8px; }
-          .pin-label { font-size: 8px; }
-        }
-      `}</style>
-
-      <aside className={`sidebar ${mobileOpen ? "open" : ""}`}>
+      <aside
+        className={`sidebar${mobileNavOpen ? " mobile-open" : ""}`}
+      >
         <div className="brand">
-          <div className="brand-icon"><TrafficCone size={23} /></div>
-          <div>
-            <div className="brand-name">AYKEL TRAFFIC</div>
-            <div className="brand-sub">SMART CITY OPERATIONS</div>
+          <div className="brand-mark">
+            <Activity size={20} strokeWidth={2.5} />
           </div>
+
+          <div className="brand-name">
+            Aykel<span>Connect</span>
+            <small>COMMUNITY OPERATIONS</small>
+          </div>
+
+          <button
+            className="icon-button sidebar-close"
+            aria-label="Close navigation"
+            onClick={() => setMobileNavOpen(false)}
+          >
+            <X size={18} />
+          </button>
         </div>
 
-        <div className="nav-label">MAIN MENU</div>
-        {navItems.map(({ name, icon: Icon }) => (
-          <button
-            key={name}
-            className={`nav-item ${active === name ? "active" : ""}`}
-            onClick={() => { setActive(name); setMobileOpen(false); }}
-          >
-            <Icon size={17} /> {name}
-          </button>
-        ))}
+        <div className="workspace-picker">
+          <div className="city-avatar">AK</div>
 
-        <div className="nav-label">SYSTEM</div>
-        <button className={`nav-item ${active === "Settings" ? "active" : ""}`} onClick={() => setActive("Settings")}>
-          <Settings size={17} /> Settings
-        </button>
+          <div className="workspace-copy">
+            <strong>Aykel Town</strong>
+            <span>Community operations</span>
+          </div>
+
+          <ChevronDown size={14} />
+        </div>
+
+        <div className="nav-caption">WORKSPACE</div>
+
+        <nav
+          className="primary-nav"
+          aria-label="Main navigation"
+        >
+          <a
+            href="#overview"
+            className={`nav-link${activeSection === "overview" ? " active" : ""}`}
+            aria-current={
+              activeSection === "overview"
+                ? "page"
+                : undefined
+            }
+            onClick={() => {
+              setActiveSection("overview");
+              setMobileNavOpen(false);
+            }}
+          >
+            <Crosshair size={17} />
+            Overview
+
+            {activeSection === "overview" && (
+              <span className="nav-current-dot" />
+            )}
+          </a>
+
+          <a
+            href="#intersections"
+            className={`nav-link${activeSection === "intersections" ? " active" : ""}`}
+            aria-current={
+              activeSection === "intersections"
+                ? "location"
+                : undefined
+            }
+            onClick={() => {
+              setActiveSection("intersections");
+              setMobileNavOpen(false);
+            }}
+          >
+            <MapPin size={17} />
+            Sample traffic
+
+            {activeSection === "intersections" && (
+              <span className="nav-current-dot" />
+            )}
+          </a>
+
+          <a
+            href="#incidents"
+            className={`nav-link${activeSection === "incidents" ? " active" : ""}`}
+            aria-current={
+              activeSection === "incidents"
+                ? "location"
+                : undefined
+            }
+            onClick={() => {
+              setActiveSection("incidents");
+              setMobileNavOpen(false);
+            }}
+          >
+            <Siren size={17} />
+            Community reports
+
+            {summary?.activeIncidents ? (
+              <span className="nav-count">
+                {summary.activeIncidents}
+              </span>
+            ) : null}
+
+            {activeSection === "incidents" &&
+              !summary?.activeIncidents && (
+                <span className="nav-current-dot" />
+              )}
+          </a>
+
+          <a
+            href="#insights"
+            className={`nav-link${activeSection === "insights" ? " active" : ""}`}
+            aria-current={
+              activeSection === "insights"
+                ? "location"
+                : undefined
+            }
+            onClick={() => {
+              setActiveSection("insights");
+              setMobileNavOpen(false);
+            }}
+          >
+            <TrendingUp size={17} />
+            Traffic demo
+
+            {activeSection === "insights" && (
+              <span className="nav-current-dot" />
+            )}
+          </a>
+        </nav>
 
         <div className="sidebar-bottom">
           <div className="system-card">
-            <div className="system-title">System status</div>
-            <div className="system-line"><span className="green-dot" /> Dashboard running</div>
-            <div className="system-line" style={{ marginTop: 9 }}><Activity size={13} /> Demo monitoring mode</div>
+            <div className="system-card-heading">
+              <span
+                className={`system-online-dot${!liveConnected ? " status-offline" : ""}`}
+              />
+              LIVE SIMULATION
+              <span>DEMO</span>
+            </div>
+
+            <strong>
+              {error
+                ? "API connection unavailable"
+                : liveConnected
+                  ? "Live demo feed connected"
+                  : "Reconnecting to demo feed"}
+            </strong>
+
+            <div className="system-subline">
+              <span>Traffic readings</span>
+              <span className="data-source">
+                SIMULATED
+              </span>
+            </div>
           </div>
-          <div className="sidebar-footer">AYKEL TOWN · CHILGA<br />TRAFFIC MANAGEMENT SYSTEM<br />Version 1.0 · Demonstration</div>
+
+          <div className="user-profile">
+            <div className="user-avatar">MY</div>
+
+            <div className="user-copy">
+              <strong>Mihiretu Yeshi</strong>
+              <span>Project operator</span>
+            </div>
+
+            <button
+              className="icon-button help-button"
+              aria-label="Help"
+              onClick={() => setOpenPanel("help")}
+            >
+              <CircleHelp size={16} />
+            </button>
+          </div>
         </div>
       </aside>
 
-      <main className="main">
+      {/* MOBILE BACKDROP */}
+
+      {mobileNavOpen && (
+        <button
+          className="mobile-backdrop"
+          aria-label="Close navigation"
+          onClick={() => setMobileNavOpen(false)}
+        />
+      )}
+
+      {/* MAIN CONTENT */}
+
+      <main className="main-content" id="overview">
+        {/* TOP BAR */}
+
         <header className="topbar">
-          <div className="top-left">
-            <button className="icon-btn mobile-menu" onClick={() => setMobileOpen(!mobileOpen)}>
-              {mobileOpen ? <X size={18} /> : <Menu size={18} />}
-            </button>
-            <div>
-              <div className="page-title">{active}</div>
-              <div className="breadcrumb">Aykel Town / {active}</div>
-            </div>
+          <button
+            className="icon-button mobile-menu-button"
+            aria-label="Open navigation"
+            onClick={() => setMobileNavOpen(true)}
+          >
+            <Menu size={19} />
+          </button>
+
+          <div className="breadcrumbs">
+            <span>Aykel Town</span>
+            <span>/</span>
+            <strong>Overview</strong>
           </div>
 
-          <div className="top-actions">
-            <div className="search-box">
-              <Search size={15} />
-              <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search intersections..." />
+          <div className="topbar-right">
+            <div
+              className="weather-chip"
+              title="Sample weather — not a live forecast"
+            >
+              <CloudSun size={16} />
+              <strong>72°</strong>
+              <span>Sample conditions</span>
+              <i />
             </div>
-            <button className="icon-btn" onClick={() => setNotifications(!notifications)} title="Toggle notifications">
-              <Bell size={16} />
-              {notifications && <span className="notification-dot" />}
+
+            <div className="topbar-divider" />
+
+            <time
+              className="clock"
+              dateTime={now.toISOString()}
+            >
+              <Clock3 size={14} />
+              {timeDisplay}
+            </time>
+
+            <button
+              className="icon-button theme-toggle"
+              aria-label={`Switch to ${theme === "light" ? "dark" : "light"} mode`}
+              title={`Switch to ${theme === "light" ? "dark" : "light"} mode`}
+              onClick={() =>
+                setTheme(
+                  theme === "light" ? "dark" : "light",
+                )
+              }
+            >
+              {theme === "light" ? (
+                <Moon size={17} />
+              ) : (
+                <Sun size={17} />
+              )}
             </button>
-            <div className="profile">
-              <div className="avatar">AT</div>
-              <div className="profile-info">
-                <div className="profile-name">Traffic Operator</div>
-                <div className="profile-role">Administrator</div>
-              </div>
-              <ChevronDown className="profile-chevron" size={14} color="#8996a9" />
-            </div>
+
+            <button
+              className="icon-button notification-button"
+              aria-label={`Notifications, ${activeIncidents.length} active reports`}
+              title="View active community reports"
+              onClick={() =>
+                setOpenPanel(
+                  openPanel === "notifications"
+                    ? null
+                    : "notifications",
+                )
+              }
+              aria-haspopup="dialog"
+            >
+              <Bell size={17} />
+
+              {activeIncidents.length > 0 && <span />}
+            </button>
+
+            <div className="topbar-avatar">MY</div>
           </div>
         </header>
 
-        <div className="content">
-          <div className="welcome">
+        <div className="dashboard">
+          {/* PAGE HEADING */}
+
+          <div className="page-heading">
             <div>
-              <h1>Good day, Traffic Operator 👋</h1>
-              <p>Monitor traffic activity and road conditions across Aykel Town.</p>
+              <div className="heading-kicker">
+                <span
+                  className={`live-pulse${liveConnected ? "" : " disconnected"}`}
+                />
+
+                {liveConnected
+                  ? "SYSTEM CONNECTED"
+                  : "RECONNECTING"}
+
+                <span>·</span>
+                {dateDisplay}
+              </div>
+
+              <h1>
+                Good {greeting}, Mihiretu{" "}
+                <span className="wave">✳</span>
+              </h1>
+
+              <p>
+                Community reporting for Aykel Town.
+                Traffic monitoring below still uses
+                simulated demonstration data.
+              </p>
             </div>
-            <div className="welcome-actions">
-              <select className="date-select" value={period} onChange={(e) => setPeriod(e.target.value)}>
-                <option>Today</option>
-                <option>This week</option>
-                <option>This month</option>
-              </select>
-              <button className="primary-btn" onClick={() => window.print()}>
-                <Activity size={14} /> Export report
+
+            <div className="heading-actions">
+              <button
+                className="button button-secondary"
+                onClick={exportDashboard}
+                disabled={!dashboard}
+              >
+                <Download size={15} />
+                Export report
+              </button>
+
+              <button
+                className={`button button-secondary${refreshing ? " is-loading" : ""}`}
+                onClick={() => void refresh(true)}
+                disabled={refreshing}
+              >
+                <RefreshCw
+                  size={15}
+                  className={refreshing ? "spin" : ""}
+                />
+                Refresh
+              </button>
+
+              <button
+                className="button button-primary"
+                onClick={openIncidentForm}
+              >
+                <Plus size={16} />
+                Report a problem
               </button>
             </div>
           </div>
 
-          <div className="demo-banner">
-            <AlertTriangle size={15} />
-            Demonstration data only — traffic figures, map positions, weather, and incidents are illustrative, not live Aykel measurements.
-          </div>
+          {/* ERROR MESSAGE */}
 
-          <section className="metric-grid">
-            <div className="card metric-card">
-              <div className="metric-top">
-                <span className="metric-label">Monitored vehicles / hour</span>
-                <span className="metric-icon blue"><CarFront size={18} /></span>
-              </div>
-              <div className="metric-value">{totalVehicles.toLocaleString()}</div>
-              <div className="metric-foot"><span className="trend-up"><ArrowUpRight size={12} /></span> Sample traffic volume</div>
-            </div>
-            <div className="card metric-card">
-              <div className="metric-top">
-                <span className="metric-label">Average speed</span>
-                <span className="metric-icon green"><Gauge size={18} /></span>
-              </div>
-              <div className="metric-value">29 <span style={{ fontSize: 12, color: "#8b97a8" }}>km/h</span></div>
-              <div className="metric-foot">Across sample monitoring zones</div>
-            </div>
-            <div className="card metric-card">
-              <div className="metric-top">
-                <span className="metric-label">Severe congestion</span>
-                <span className="metric-icon red"><AlertTriangle size={18} /></span>
-              </div>
-              <div className="metric-value">{severeCount}</div>
-              <div className="metric-foot"><span className="trend-down">Needs attention</span></div>
-            </div>
-            <div className="card metric-card">
-              <div className="metric-top">
-                <span className="metric-label">Monitored zones</span>
-                <span className="metric-icon orange"><Signal size={18} /></span>
-              </div>
-              <div className="metric-value">{intersections.length}</div>
-              <div className="metric-foot">Illustrative monitoring locations</div>
-            </div>
-          </section>
+          {error && (
+            <div className="error-banner">
+              <AlertTriangle size={17} />
 
-          <section className="section-grid">
-            <div className="card">
-              <div className="card-header">
-                <div>
-                  <div className="card-title">Aykel traffic overview</div>
-                  <div className="card-subtitle">Illustrative monitoring-zone map</div>
-                </div>
-                <span className="status status-moderate">DEMO MAP</span>
-              </div>
-              <div className="map-area">
-                <div className="map-canvas">
-                  <div className="map-road road-one" />
-                  <div className="map-road road-two" />
-                  <div className="map-road road-three" />
-                  <div className="map-road road-four" />
-                  <div className="map-river" />
-                  <span className="map-label one">AYKEL TOWN</span>
-                  <span className="map-label two">CHILGA</span>
-                  <span className="map-label three">NORTH ZONE</span>
-                  <span className="map-label four">SOUTH ZONE</span>
+              <div>
+                <strong>
+                  Unable to load dashboard
+                </strong>
 
-                  {[
-                    { x: "48%", y: "48%", label: "Central", level: "heavy" },
-                    { x: "69%", y: "30%", label: "Market", level: "moderate" },
-                    { x: "27%", y: "68%", label: "Bus station", level: "severe" },
-                    { x: "77%", y: "70%", label: "Hospital", level: "clear" },
-                    { x: "25%", y: "25%", label: "School", level: "moderate" },
-                  ].map((pin) => (
-                    <div key={pin.label} className="map-pin" style={{ left: pin.x, top: pin.y }}>
-                      <span className={`pin-dot pin-${pin.level}`} />
-                      <span className="pin-label">{pin.label}</span>
-                    </div>
+                <span>
+                  {error} Start the application with{" "}
+                  <code>npm run dev</code>.
+                </span>
+              </div>
+
+              <button
+                className="text-button"
+                onClick={() => void refresh()}
+              >
+                Try again
+              </button>
+            </div>
+          )}
+
+          {/* COMMUNITY REPORT METRICS */}
+
+          <section
+            className="metrics-grid"
+            aria-label="Community report summary"
+          >
+            <article className="metric-card">
+              <div className="metric-top">
+                <span className="metric-icon mint">
+                  <Activity size={17} />
+                </span>
+
+                <span className="metric-kicker">
+                  TOTAL REPORTS
+                </span>
+              </div>
+
+              <div className="metric-value">
+                {loading ? "—" : totalReports}
+                <span className="metric-unit">
+                  reports
+                </span>
+              </div>
+
+              <div className="metric-foot">
+                All submitted community reports
+              </div>
+
+              <div className="metric-progress">
+                <span
+                  style={{
+                    width: totalReports
+                      ? `${Math.min(100, (resolvedReports / totalReports) * 100)}%`
+                      : "0%",
+                  }}
+                />
+              </div>
+            </article>
+
+            <article className="metric-card">
+              <div className="metric-top">
+                <span className="metric-icon amber">
+                  <AlertTriangle size={17} />
+                </span>
+
+                <span className="metric-kicker">
+                  AWAITING REVIEW
+                </span>
+
+                <span className="metric-trend negative">
+                  <ArrowUpRight size={13} />
+                  Open
+                </span>
+              </div>
+
+              <div className="metric-value">
+                {loading ? "—" : openReports}
+                <span className="metric-unit">
+                  open
+                </span>
+              </div>
+
+              <div className="metric-foot">
+                Reports awaiting operator review
+              </div>
+
+              <div className="incident-stack">
+                {dashboard?.incidents
+                  .filter((item) => item.status === "open")
+                  .slice(0, 8)
+                  .map((incident) => (
+                    <i
+                      key={incident.id}
+                      className={`incident-pip ${incident.severity}`}
+                    />
                   ))}
-                </div>
-                <div className="map-legend">
-                  <span className="legend-item"><i className="legend-dot pin-clear" /> Clear</span>
-                  <span className="legend-item"><i className="legend-dot pin-moderate" /> Moderate</span>
-                  <span className="legend-item"><i className="legend-dot pin-heavy" /> Heavy</span>
-                  <span className="legend-item"><i className="legend-dot pin-severe" /> Severe</span>
-                </div>
               </div>
+            </article>
+
+            <article className="metric-card">
+              <div className="metric-top">
+                <span className="metric-icon blue">
+                  <RefreshCw size={17} />
+                </span>
+
+                <span className="metric-kicker">
+                  IN PROGRESS
+                </span>
+
+                <span className="metric-trend metric-demo-tag">
+                  REVIEW
+                </span>
+              </div>
+
+              <div className="metric-value">
+                {loading
+                  ? "—"
+                  : investigatingReports}
+                <span className="metric-unit">
+                  investigating
+                </span>
+              </div>
+
+              <div className="metric-foot">
+                Reports being handled by operators
+              </div>
+
+              <div className="metric-progress">
+                <span
+                  style={{
+                    width: totalReports
+                      ? `${(investigatingReports / totalReports) * 100}%`
+                      : "0%",
+                  }}
+                />
+              </div>
+            </article>
+
+            <article className="metric-card">
+              <div className="metric-top">
+                <span className="metric-icon violet">
+                  <ShieldCheck size={17} />
+                </span>
+
+                <span className="metric-kicker">
+                  RESOLVED REPORTS
+                </span>
+
+                <span className="metric-trend positive">
+                  <Check size={13} />
+                  Closed
+                </span>
+              </div>
+
+              <div className="metric-value">
+                {loading ? "—" : resolvedReports}
+                <span className="metric-unit">
+                  resolved
+                </span>
+              </div>
+
+              <div className="metric-foot">
+                {loading
+                  ? "Loading report information..."
+                  : `${criticalReports} unresolved critical-priority reports`}
+              </div>
+
+              <div className="metric-progress violet-progress">
+                <span
+                  style={{
+                    width: totalReports
+                      ? `${(resolvedReports / totalReports) * 100}%`
+                      : "0%",
+                  }}
+                />
+              </div>
+            </article>
+          </section>
+
+          {/* RECOMMENDATIONS */}
+
+          <section
+            className="recommendations-card"
+            aria-labelledby="recommendations-title"
+          >
+            <div className="recommendations-heading">
+              <div>
+                <span className="eyebrow">
+                  DECISION SUPPORT · OPERATOR REVIEW
+                </span>
+
+                <h2 id="recommendations-title">
+                  Recommended next steps
+                </h2>
+              </div>
+
+              <span className="recommendations-note">
+                <Sparkles size={13} />
+                Rule-based · simulated data
+              </span>
             </div>
 
-            <div>
-              <div className="card weather-card">
-                <div className="weather-top"><span>Weather overview</span><CloudSun size={22} /></div>
-                <div className="weather-temp">--°C</div>
-                <div className="weather-description">Weather data not connected</div>
-                <div className="weather-bottom">
-                  <span>Location<br /><strong>Aykel, Ethiopia</strong></span>
-                  <span>Live weather<br /><strong>Unavailable</strong></span>
-                </div>
+            {loading && !dashboard ? (
+              <div className="recommendations-clear">
+                Waiting for the first traffic update…
               </div>
+            ) : (
+              (dashboard?.recommendations ?? []).length >
+              0 ? (
+                <div className="recommendation-list">
+                  {dashboard?.recommendations.map(
+                    (recommendation) => (
+                      <article
+                        className={`recommendation-item ${recommendation.priority}`}
+                        key={recommendation.id}
+                      >
+                        <span className="recommendation-icon">
+                          <AlertTriangle size={16} />
+                        </span>
 
-              <div className="card signal-card">
-                <div className="signal-heading"><span>Signal operations</span><Zap size={16} color="#e58a27" /></div>
-                <div className="signal-status">
-                  <div className="signal-light"><Signal size={21} /></div>
+                        <div className="recommendation-copy">
+                          <div>
+                            <span
+                              className={`recommendation-priority ${recommendation.priority}`}
+                            >
+                              {recommendation.priority}
+                            </span>
+
+                            <strong>
+                              {recommendation.title}
+                            </strong>
+                          </div>
+
+                          <p>
+                            {recommendation.reason}
+                          </p>
+                        </div>
+
+                        <button
+                          className="recommendation-action"
+                          onClick={() =>
+                            openRecommendation(
+                              recommendation,
+                            )
+                          }
+                        >
+                          {recommendation.actionLabel}
+                          <ArrowRight size={14} />
+                        </button>
+                      </article>
+                    ),
+                  )}
+                </div>
+              ) : (
+                <div className="recommendations-clear">
+                  <ShieldCheck size={17} />
+                  No urgent actions suggested. Continue
+                  routine monitoring.
+                </div>
+              )
+            )}
+
+            <p className="recommendations-disclaimer">
+              Recommendations are decision support only.
+              Traffic readings and signal simulations are
+              demonstration data. No physical traffic
+              signals are controlled.
+            </p>
+          </section>
+
+          {/* MAIN CONTENT GRID */}
+
+          <div className="content-grid">
+            <div className="primary-column">
+              <p className="recommendations-disclaimer">
+                The traffic map below contains sample
+                intersections. These are not verified
+                Aykel locations.
+              </p>
+
+              <CityMap
+                intersections={
+                  dashboard?.intersections ??
+                  emptyIntersections
+                }
+                onSelect={selectIntersection}
+                selectedId={selectedId}
+              />
+
+              {/* TRAFFIC CHART */}
+
+              <section
+                className="traffic-card"
+                id="insights"
+              >
+                <div className="section-head">
                   <div>
-                    <div className="signal-number">3 / 5</div>
-                    <div className="signal-caption">Sample adaptive signals</div>
+                    <span className="eyebrow">
+                      SAMPLE NETWORK PERFORMANCE
+                    </span>
+
+                    <h2>
+                      Traffic volume demonstration
+                    </h2>
                   </div>
-                </div>
-                <div style={{ height: 6, borderRadius: 10, background: "#edf1f6", marginTop: 15, overflow: "hidden" }}>
-                  <div style={{ width: "60%", height: "100%", background: "#2475e8", borderRadius: 10 }} />
-                </div>
-                <div style={{ color: "#96a2b2", fontSize: 9, marginTop: 8 }}>Illustrative signal configuration</div>
-              </div>
-            </div>
-          </section>
 
-          <section className="section-grid">
-            <div className="card chart-card">
-              <div className="card-header">
-                <div>
-                  <div className="card-title">Traffic volume analytics</div>
-                  <div className="card-subtitle">Illustrative hourly vehicle pattern · {period}</div>
-                </div>
-                <span className="status status-clear">SAMPLE</span>
-              </div>
-              <div className="chart-wrap">
-                <svg className="chart-svg" viewBox="0 0 600 180" preserveAspectRatio="none">
-                  <defs>
-                    <linearGradient id="chartFill" x1="0" x2="0" y1="0" y2="1">
-                      <stop offset="0%" stopColor="#2875e8" stopOpacity=".22" />
-                      <stop offset="100%" stopColor="#2875e8" stopOpacity="0" />
-                    </linearGradient>
-                  </defs>
-                  {[25, 65, 105, 145].map((y) => <line key={y} x1="0" y1={y} x2="600" y2={y} className="chart-gridline" />)}
-                  <polygon className="chart-area" points={`0,${155 - chartValues[0]} ${chartValues.map((v, i) => `${i * (600 / 11)},${155 - v * 1.5}`).join(" ")} 600,180 0,180`} />
-                  <polyline className="chart-line" points={chartValues.map((v, i) => `${i * (600 / 11)},${155 - v * 1.5}`).join(" ")} />
-                  {chartValues.map((v, i) => <circle key={i} className="chart-point" cx={i * (600 / 11)} cy={155 - v * 1.5} r="3.5" />)}
-                </svg>
-                <div className="chart-labels">
-                  {["6 AM", "8 AM", "10 AM", "12 PM", "2 PM", "4 PM", "6 PM", "8 PM"].map((label) => <span key={label}>{label}</span>)}
-                </div>
-              </div>
-              <div className="chart-summary">
-                <div className="chart-stat"><strong>70%</strong><span>Sample peak activity</span></div>
-                <div className="chart-stat"><strong>12 hrs</strong><span>Illustrative timeline</span></div>
-              </div>
-            </div>
+                  <label className="chart-range">
+                    <span className="visually-hidden">
+                      Traffic chart time range
+                    </span>
 
-            <div className="card table-card">
-              <div className="card-header">
-                <div>
-                  <div className="card-title">Traffic conditions</div>
-                  <div className="card-subtitle">Sample monitoring locations</div>
-                </div>
-                <select className="filter-select" value={filter} onChange={(e) => setFilter(e.target.value)}>
-                  <option>All</option>
-                  <option>Clear</option>
-                  <option>Moderate</option>
-                  <option>Heavy</option>
-                  <option>Severe</option>
-                </select>
-              </div>
-              <div className="table-scroll">
-                <table>
-                  <thead><tr><th>Location</th><th>Speed</th><th>Condition</th></tr></thead>
-                  <tbody>
-                    {filteredIntersections.map((item) => (
-                      <tr key={item.name}>
-                        <td><div className="intersection-name">{item.name}</div><div className="intersection-area">{item.area}</div></td>
-                        <td>{item.speed} km/h</td>
-                        <td><Status level={item.level} /></td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                {filteredIntersections.length === 0 && <div className="empty-state">No matching monitoring locations found.</div>}
-              </div>
-            </div>
-          </section>
+                    <select
+                      className="select-button"
+                      value={chartRange}
+                      onChange={(event) =>
+                        setChartRange(
+                          Number(
+                            event.target.value,
+                          ) as 6 | 12,
+                        )
+                      }
+                    >
+                      <option value={6}>
+                        Last 6 hours
+                      </option>
 
-          <section className="bottom-grid">
-            <div className="card">
-              <div className="card-header">
-                <div>
-                  <div className="card-title">Recent incidents</div>
-                  <div className="card-subtitle">Illustrative incident reports</div>
+                      <option value={12}>
+                        Last 12 hours
+                      </option>
+                    </select>
+
+                    <ChevronDown
+                      size={14}
+                      aria-hidden="true"
+                    />
+                  </label>
                 </div>
-                <button className="text-link" onClick={() => setActive("Incidents")}>View all</button>
-              </div>
-              <div className="incident-list">
-                {incidents.map((incident) => (
-                  <div className="incident-row" key={incident.title}>
-                    <div className="incident-icon"><AlertTriangle size={16} /></div>
-                    <div className="incident-main">
-                      <div className="incident-name">{incident.title}</div>
-                      <div className="incident-meta">{incident.place} · {incident.time}</div>
-                    </div>
-                    <div className="incident-right">
-                      <Status level={incident.severity} />
-                      <Status level={incident.status} />
-                    </div>
+
+                <div className="chart-summary">
+                  <span className="chart-value">
+                    {averageTrend ?? "—"}
+                    <span>%</span>
+                  </span>
+
+                  <span className="chart-summary-label">
+                    avg. road capacity
+                  </span>
+                </div>
+
+                <TrafficChart
+                  data={visibleTrend}
+                  hours={chartRange}
+                />
+
+                <div className="chart-foot">
+                  <span>
+                    <i className="chart-key" />
+                    Road capacity
+                  </span>
+
+                  <span>
+                    {dashboard?.trendSource === "history"
+                      ? "Saved simulated readings"
+                      : dashboard?.trendSource === "mixed"
+                        ? "Saved history + modeled gaps"
+                        : "Modeled estimate · No recent history"}
+                  </span>
+                </div>
+
+                {/* TRAFFIC FORECAST */}
+
+                <div
+                  className="forecast-panel"
+                  aria-live="polite"
+                >
+                  <div className="forecast-title">
+                    <span className="forecast-icon">
+                      <Sparkles size={14} />
+                    </span>
+
+                    <span>
+                      <strong>
+                        Next-hour traffic outlook
+                      </strong>
+
+                      <small>
+                        Linear trend model · simulated
+                        readings
+                      </small>
+                    </span>
                   </div>
-                ))}
-              </div>
+
+                  {dashboard?.forecast ? (
+                    <>
+                      <div className="forecast-result">
+                        <strong>
+                          {dashboard.forecast.predictedVolume}%
+                        </strong>
+
+                        <span>
+                          estimated capacity
+                        </span>
+                      </div>
+
+                      <div
+                        className={`forecast-direction ${dashboard.forecast.direction}`}
+                      >
+                        {dashboard.forecast.direction ===
+                        "rising" ? (
+                          <ArrowUpRight size={14} />
+                        ) : dashboard.forecast.direction ===
+                          "falling" ? (
+                          <ArrowDownRight size={14} />
+                        ) : (
+                          <Activity size={13} />
+                        )}
+
+                        <strong>
+                          {dashboard.forecast.change > 0
+                            ? "+"
+                            : ""}
+                          {dashboard.forecast.change} pts
+                        </strong>
+
+                        <span>
+                          {dashboard.forecast.direction}
+                        </span>
+                      </div>
+
+                      <div className="forecast-range">
+                        <span>Estimated range</span>
+
+                        <strong>
+                          {dashboard.forecast.lowerBound}–
+                          {dashboard.forecast.upperBound}%
+                        </strong>
+                      </div>
+                    </>
+                  ) : (
+                    <p className="forecast-empty">
+                      Not enough traffic readings to
+                      estimate a trend.
+                    </p>
+                  )}
+
+                  <p className="forecast-disclaimer">
+                    A short-term statistical estimate, not
+                    a trained AI model. Review conditions
+                    before changing signal plans.
+                  </p>
+                </div>
+              </section>
             </div>
 
-            <div className="card recommendation">
-              <div className="card-title">Operator recommendations</div>
-              <div className="card-subtitle">Suggested actions based on sample data</div>
-              <div className="recommendation-item">
-                <div className="recommendation-icon"><TrafficCone size={16} /></div>
-                <div><div className="recommendation-title">Review bus station congestion</div><div className="recommendation-text">Check traffic flow and possible road obstructions in this sample zone.</div></div>
-              </div>
-              <div className="recommendation-item">
-                <div className="recommendation-icon"><Users size={16} /></div>
-                <div><div className="recommendation-title">Consider pedestrian safety</div><div className="recommendation-text">Review pedestrian crossing arrangements near busy public areas.</div></div>
-              </div>
-              <div className="recommendation-item">
-                <div className="recommendation-icon"><CheckCircle2 size={16} /></div>
-                <div><div className="recommendation-title">Review signal timing</div><div className="recommendation-text">Evaluate whether signal plans match observed traffic demand.</div></div>
-              </div>
-            </div>
-          </section>
+            {/* SIDE COLUMN */}
 
-          <div className="footer">
-            Aykel Town Smart Traffic Management · Demonstration interface · Not connected to live traffic sensors
+            <div className="side-column">
+              {/* COMMUNITY REPORTS */}
+
+              <section
+                className="incidents-card"
+                id="incidents"
+              >
+                <div className="section-head incidents-heading">
+                  <div>
+                    <span className="eyebrow">
+                      COMMUNITY RESPONSE QUEUE
+                    </span>
+
+                    <h2>
+                      Community reports{" "}
+                      <span className="heading-count">
+                        {summary?.activeIncidents ?? 0}
+                      </span>
+                    </h2>
+                  </div>
+
+                  <label
+                    className="incident-filter"
+                    title="Filter reports by urgency"
+                  >
+                    <SlidersHorizontal
+                      size={15}
+                      aria-hidden="true"
+                    />
+
+                    <select
+                      value={incidentSeverity}
+                      onChange={(event) =>
+                        setIncidentSeverity(
+                          event.target.value as
+                            | "all"
+                            | IncidentSeverity,
+                        )
+                      }
+                      aria-label="Filter reports by urgency"
+                    >
+                      <option value="all">
+                        All urgencies
+                      </option>
+
+                      {[...severityOptions]
+                        .reverse()
+                        .map((severity) => (
+                          <option
+                            key={severity}
+                            value={severity}
+                          >
+                            {severity[0].toUpperCase() +
+                              severity.slice(1)}
+                          </option>
+                        ))}
+                    </select>
+
+                    <ChevronDown
+                      size={12}
+                      aria-hidden="true"
+                    />
+                  </label>
+                </div>
+
+                <div className="incident-list">
+                  {visibleIncidents.map((incident) => (
+                    <IncidentRow
+                      key={incident.id}
+                      incident={incident}
+                      recommended={
+                        focusedIncidentId ===
+                        String(incident.id)
+                      }
+                      onAdvance={() =>
+                        void changeIncidentStatus(
+                          incident,
+                          incident.status === "open"
+                            ? "investigating"
+                            : "resolved",
+                        )
+                      }
+                    />
+                  ))}
+
+                  {!loading &&
+                    visibleIncidents.length === 0 && (
+                      <div className="empty-incidents">
+                        {activeIncidents.length === 0 ? (
+                          <ShieldCheck size={24} />
+                        ) : (
+                          <SlidersHorizontal size={22} />
+                        )}
+
+                        <strong>
+                          {activeIncidents.length === 0
+                            ? "No active reports"
+                            : "No matching reports"}
+                        </strong>
+
+                        <span>
+                          {activeIncidents.length === 0
+                            ? "Community-submitted problems will appear here."
+                            : "Try selecting another urgency level."}
+                        </span>
+                      </div>
+                    )}
+                </div>
+
+                <button
+                  className="incident-add"
+                  onClick={openIncidentForm}
+                >
+                  <Plus size={15} />
+                  Report a community problem
+                </button>
+              </section>
+
+              {/* SAMPLE INTERSECTIONS */}
+
+              <section
+                className="intersection-card"
+                id="intersections"
+              >
+                <div className="section-head intersection-heading">
+                  <div>
+                    <span className="eyebrow">
+                      DEMONSTRATION DATA
+                    </span>
+
+                    <h2>Sample intersections</h2>
+                  </div>
+
+                  <span
+                    className={`online-badge${liveConnected ? "" : " offline"}`}
+                    aria-live="polite"
+                  >
+                    <i />
+                    {liveConnected
+                      ? "CONNECTED"
+                      : "RECONNECTING"}
+                  </span>
+                </div>
+
+                <div className="intersection-controls">
+                  <label className="network-filter">
+                    <span className="visually-hidden">
+                      Filter intersections by congestion
+                    </span>
+
+                    <select
+                      value={intersectionFilter}
+                      onChange={(event) =>
+                        setIntersectionFilter(
+                          event.target.value as IntersectionFilter,
+                        )
+                      }
+                    >
+                      <option value="all">
+                        All traffic
+                      </option>
+
+                      <option value="congested">
+                        Needs attention
+                      </option>
+
+                      <option value="clear">
+                        Clear / moderate
+                      </option>
+                    </select>
+
+                    <ChevronDown
+                      size={13}
+                      aria-hidden="true"
+                    />
+                  </label>
+
+                  <label className="network-filter">
+                    <span className="visually-hidden">
+                      Sort intersections
+                    </span>
+
+                    <select
+                      value={intersectionSort}
+                      onChange={(event) =>
+                        setIntersectionSort(
+                          event.target.value as IntersectionSort,
+                        )
+                      }
+                    >
+                      <option value="priority">
+                        Priority
+                      </option>
+
+                      <option value="speed">
+                        Highest speed
+                      </option>
+
+                      <option value="name">
+                        Name
+                      </option>
+                    </select>
+
+                    <ChevronDown
+                      size={13}
+                      aria-hidden="true"
+                    />
+                  </label>
+                </div>
+
+                <label className="search-field">
+                  <Search size={15} />
+
+                  <input
+                    value={search}
+                    onChange={(event) =>
+                      setSearch(event.target.value)
+                    }
+                    placeholder="Find a sample intersection..."
+                    aria-label="Search sample intersections"
+                  />
+
+                  {search && (
+                    <button
+                      aria-label="Clear search"
+                      onClick={() => setSearch("")}
+                    >
+                      <X size={14} />
+                    </button>
+                  )}
+                </label>
+
+                <div className="intersection-list">
+                  {filtered.map((intersection) => (
+                    <button
+                      className={`intersection-row${selectedId === intersection.id ? " selected" : ""}`}
+                      key={intersection.id}
+                      onClick={() =>
+                        setSelectedId(
+                          selectedId === intersection.id
+                            ? null
+                            : intersection.id,
+                        )
+                      }
+                    >
+                      <span
+                        className={`intersection-signal ${intersection.congestion.toLowerCase()}`}
+                      >
+                        <i />
+                      </span>
+
+                      <span className="intersection-name">
+                        <strong>
+                          {intersection.name}
+                        </strong>
+
+                        <span>
+                          {intersection.district}
+                        </span>
+                      </span>
+
+                      <span className="intersection-speed">
+                        <strong>
+                          {intersection.speed}
+                        </strong>
+
+                        <span>mph</span>
+                      </span>
+
+                      <span
+                        className={`congestion-label ${metricLabel(intersection.congestion)}`}
+                      >
+                        {intersection.congestion}
+                      </span>
+                    </button>
+                  ))}
+
+                  {!loading &&
+                    filtered.length === 0 && (
+                      <div className="search-empty">
+                        No sample intersections match the
+                        current search and filters.
+                      </div>
+                    )}
+                </div>
+
+                {/* SELECTED INTERSECTION DETAILS */}
+
+                {selected && (
+                  <div className="intersection-detail">
+                    <div className="detail-header">
+                      <div>
+                        <span className="eyebrow">
+                          DEMO SIGNAL CONTROL ·{" "}
+                          {selected.id.toUpperCase()}
+                        </span>
+
+                        <strong>{selected.name}</strong>
+                      </div>
+
+                      <span
+                        className={`mode-badge ${selected.mode}`}
+                      >
+                        {selected.mode === "adaptive" ? (
+                          <Sparkles size={12} />
+                        ) : (
+                          <Signal size={12} />
+                        )}
+
+                        {selected.mode}
+                      </span>
+                    </div>
+
+                    <div className="detail-stats">
+                      <span>
+                        <strong>
+                          {selected.vehiclesPerHour.toLocaleString()}
+                        </strong>
+
+                        <small>vehicles / hr</small>
+                      </span>
+
+                      <span>
+                        <strong>
+                          {selected.waitSeconds}s
+                        </strong>
+
+                        <small>avg. wait</small>
+                      </span>
+
+                      <span>
+                        <strong>
+                          {selected.dailyVehicles.toLocaleString()}
+                        </strong>
+
+                        <small>vehicles / day</small>
+                      </span>
+                    </div>
+
+                    <button
+                      className="optimize-button"
+                      onClick={() =>
+                        void changeSignalMode(selected)
+                      }
+                    >
+                      <Zap size={14} />
+
+                      {selected.mode === "adaptive"
+                        ? "Simulate fixed timing"
+                        : "Simulate adaptive timing"}
+
+                      <ArrowRight size={14} />
+                    </button>
+
+                    <span className="operator-note">
+                      <ShieldCheck size={12} />
+                      Demo only — no physical signal is
+                      controlled
+                    </span>
+                  </div>
+                )}
+
+                <div className="intersection-footer">
+                  <span>
+                    Showing {filtered.length} of{" "}
+                    {dashboard?.intersections.length ?? 0}
+                  </span>
+
+                  <span className="sim-note">
+                    <Activity size={12} />
+                    Simulation
+                  </span>
+                </div>
+              </section>
+            </div>
           </div>
+
+          {/* FOOTER */}
+
+          <footer className="dashboard-footer">
+            <span>
+              © 2026 Aykel Community Operations
+            </span>
+
+            <span>
+              <span
+                className={`footer-online-dot${liveConnected && !error ? "" : " status-offline"}`}
+              />
+
+              {error
+                ? "API unavailable"
+                : liveConnected
+                  ? "System connected"
+                  : "System reconnecting"}
+            </span>
+
+            <span>
+              Community reports are submissions and
+              require verification. Traffic readings
+              are simulated.
+            </span>
+
+            <button
+              className="footer-help"
+              onClick={() => setOpenPanel("help")}
+            >
+              <CircleHelp size={13} />
+              Need help?
+            </button>
+          </footer>
         </div>
       </main>
+
+      {/* REPORT FORM MODAL */}
+
+      {showIncidentForm && (
+        <div
+          className="modal-backdrop"
+          role="presentation"
+          onClick={(event) => {
+            if (
+              event.target === event.currentTarget &&
+              !saving
+            ) {
+              setShowIncidentForm(false);
+            }
+          }}
+        >
+          <section
+            className="incident-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="incident-form-title"
+          >
+            <div className="modal-heading">
+              <div>
+                <span className="eyebrow">
+                  AYKEL COMMUNITY REPORTING
+                </span>
+
+                <h2 id="incident-form-title">
+                  Report a community problem
+                </h2>
+
+                <p>
+                  Help identify problems affecting people
+                  in Aykel Town.
+                </p>
+              </div>
+
+              <button
+                className="icon-button"
+                aria-label="Close dialog"
+                onClick={() =>
+                  setShowIncidentForm(false)
+                }
+                disabled={saving}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <form
+              onSubmit={(event) =>
+                void submitIncident(event)
+              }
+            >
+              <label>
+                Problem category
+
+                <select
+                  name="type"
+                  required
+                  defaultValue=""
+                >
+                  <option value="" disabled>
+                    Select a problem category
+                  </option>
+
+                  {communityProblemTypes.map((type) => (
+                    <option key={type} value={type}>
+                      {type}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label>
+                Location in Aykel
+
+                <input
+                  name="location"
+                  value={formLocation}
+                  onChange={(event) =>
+                    setFormLocation(event.target.value)
+                  }
+                  placeholder="Enter an area, road, or nearby landmark"
+                  maxLength={120}
+                  required
+                />
+              </label>
+
+              <label>
+                Urgency
+
+                <select
+                  name="severity"
+                  defaultValue="medium"
+                >
+                  <option value="low">Low</option>
+                  <option value="medium">Medium</option>
+                  <option value="high">High</option>
+                  <option value="critical">
+                    Critical
+                  </option>
+                </select>
+              </label>
+
+              <label>
+                Describe the problem{" "}
+                <span className="optional-label">
+                  Optional
+                </span>
+
+                <textarea
+                  name="description"
+                  rows={4}
+                  maxLength={500}
+                  placeholder="Explain what happened and how it affects people..."
+                />
+              </label>
+
+              <div className="form-footer">
+                <span>
+                  <ShieldCheck size={14} />
+                  Community-submitted report
+                </span>
+
+                <button
+                  className="button button-primary"
+                  type="submit"
+                  disabled={saving}
+                >
+                  {saving ? (
+                    <RefreshCw
+                      size={15}
+                      className="spin"
+                    />
+                  ) : (
+                    <Plus size={15} />
+                  )}
+
+                  {saving
+                    ? "Submitting..."
+                    : "Submit report"}
+                </button>
+              </div>
+            </form>
+          </section>
+        </div>
+      )}
+
+      {/* HELP AND NOTIFICATIONS MODAL */}
+
+      {openPanel && (
+        <div
+          className="modal-backdrop"
+          role="presentation"
+          onClick={(event) => {
+            if (event.target === event.currentTarget) {
+              setOpenPanel(null);
+            }
+          }}
+        >
+          <section
+            className="incident-modal info-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="info-dialog-title"
+          >
+            <div className="modal-heading">
+              <div>
+                <span className="eyebrow">
+                  {openPanel === "help"
+                    ? "AYKEL CONNECT GUIDE"
+                    : "COMMUNITY REPORTING"}
+                </span>
+
+                <h2 id="info-dialog-title">
+                  {openPanel === "help"
+                    ? "Dashboard help"
+                    : "Active community reports"}
+                </h2>
+
+                <p>
+                  {openPanel === "help"
+                    ? "Quick guidance for using the Aykel community reporting system."
+                    : `${activeIncidents.length} unresolved ${
+                        activeIncidents.length === 1
+                          ? "report"
+                          : "reports"
+                      } need review.`}
+                </p>
+              </div>
+
+              <button
+                className="icon-button"
+                aria-label="Close dialog"
+                onClick={() => setOpenPanel(null)}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {openPanel === "help" ? (
+              <div className="help-content">
+                <p>
+                  <strong>
+                    Report a problem:
+                  </strong>{" "}
+                  Use the report button to submit a
+                  category, location, urgency, and
+                  description.
+                </p>
+
+                <p>
+                  <strong>
+                    Track community reports:
+                  </strong>{" "}
+                  Submitted reports appear in the
+                  community response queue. An operator
+                  can move a report from open to
+                  investigating and then resolved.
+                </p>
+
+                <p>
+                  <strong>
+                    Understand urgency:
+                  </strong>{" "}
+                  Urgency is selected by the person
+                  submitting the report. It is not an
+                  automatic verification or safety
+                  assessment.
+                </p>
+
+                <p>
+                  <strong>
+                    Traffic demonstration:
+                  </strong>{" "}
+                  The sample traffic map, readings, and
+                  signal controls are simulated and do
+                  not represent verified Aykel traffic
+                  conditions.
+                </p>
+
+                <p className="help-disclaimer">
+                  Community reports should be reviewed
+                  before being treated as verified facts.
+                </p>
+              </div>
+            ) : (
+              <div className="notification-list">
+                {activeIncidents.length > 0 ? (
+                  activeIncidents.map((incident) => (
+                    <button
+                      className="notification-item"
+                      key={incident.id}
+                      onClick={() =>
+                        focusIncident(incident)
+                      }
+                    >
+                      <span
+                        className={`severity-badge ${incident.severity}`}
+                      >
+                        {incident.severity}
+                      </span>
+
+                      <span>
+                        <strong>
+                          {incident.type}
+                        </strong>
+
+                        <small>
+                          {incident.location} ·{" "}
+                          {formatTime(
+                            incident.reportedAt,
+                          )}
+                        </small>
+                      </span>
+
+                      <ArrowRight size={15} />
+                    </button>
+                  ))
+                ) : (
+                  <div className="empty-incidents">
+                    <ShieldCheck size={24} />
+
+                    <strong>
+                      No active reports
+                    </strong>
+
+                    <span>
+                      No community reports need review.
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
+          </section>
+        </div>
+      )}
+
+      {/* TOAST */}
+
+      {notice && (
+        <div
+          className={`toast${noticeError ? " toast-error" : ""}`}
+          role={noticeError ? "alert" : "status"}
+        >
+          {noticeError ? (
+            <AlertTriangle size={16} />
+          ) : (
+            <Check size={16} />
+          )}
+
+          <span>{notice}</span>
+
+          <button
+            onClick={() => setNotice("")}
+            aria-label="Dismiss notification"
+          >
+            <X size={14} />
+          </button>
+        </div>
+      )}
     </div>
+  );
+}
+
+/* -------------------------------------------------------
+   INCIDENT ROW COMPONENT
+------------------------------------------------------- */
+
+function IncidentRow({
+  incident,
+  recommended,
+  onAdvance,
+}: {
+  incident: Incident;
+  recommended: boolean;
+  onAdvance: () => void;
+}) {
+  const Icon = incident.type
+    .toLowerCase()
+    .includes("roadwork")
+    ? Construction
+    : incident.type
+          .toLowerCase()
+          .includes("collision")
+      ? CarFront
+      : AlertTriangle;
+
+  return (
+    <article
+      className={`incident-row${recommended ? " recommended" : ""}`}
+      id={`incident-${incident.id}`}
+      tabIndex={-1}
+    >
+      <span
+        className={`incident-icon ${incident.severity}`}
+      >
+        <Icon size={16} />
+      </span>
+
+      <div className="incident-copy">
+        <strong>{incident.type}</strong>
+
+        <span>
+          <MapPin size={12} />
+          {incident.location}
+        </span>
+
+        <small>
+          <Clock3 size={11} />
+          {formatTime(incident.reportedAt)}
+        </small>
+      </div>
+
+      <div className="incident-controls">
+        <span
+          className={`severity-badge ${incident.severity}`}
+        >
+          {incident.severity}
+        </span>
+
+        <button
+          className="incident-action"
+          onClick={onAdvance}
+          aria-label={
+            incident.status === "open"
+              ? "Start investigating report"
+              : "Resolve report"
+          }
+          title={
+            incident.status === "open"
+              ? "Start investigating"
+              : "Resolve report"
+          }
+        >
+          {incident.status === "open" ? (
+            <ArrowRight size={15} />
+          ) : (
+            <Check size={15} />
+          )}
+        </button>
+      </div>
+    </article>
   );
 }

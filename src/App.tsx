@@ -61,7 +61,6 @@ export default function App() {
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
   const [showIncidentForm, setShowIncidentForm] = useState(false);
-  const [formIntersectionId, setFormIntersectionId] = useState("");
   const [formLocation, setFormLocation] = useState("");
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState("");

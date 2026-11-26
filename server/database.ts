@@ -120,6 +120,19 @@ for (const intersection of seedIntersections) {
     intersection.dailyVehicles,
   );
 }
+const updateIntersectionCoordinates = database.prepare(`
+  UPDATE intersections
+  SET latitude = ?, longitude = ?
+  WHERE id = ?
+`);
+
+for (const intersection of seedIntersections) {
+  updateIntersectionCoordinates.run(
+    intersection.latitude,
+    intersection.longitude,
+    intersection.id,
+  );
+}
 
 const storedIntersections = database.prepare(
   "SELECT id, name FROM intersections",
